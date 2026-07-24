@@ -40,6 +40,9 @@
 }
 
 html {
+  /* Global scale: every rem-based size shrinks proportionally. Percentage
+     (not px) so it still respects the viewer's browser font-size preference. */
+  font-size: 92.5%;
   scroll-behavior: smooth;
   color-scheme: dark;
 }
