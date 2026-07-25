@@ -10,7 +10,7 @@ npm install
 npm run dev
 ```
 
-- App: http://localhost:5173  
+- App: http://localhost:8080  
 - API: http://localhost:8787  
 
 ## Optional full-text API token

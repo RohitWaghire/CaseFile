@@ -18,7 +18,7 @@
       "name": "Web app (Chrome)",
       "type": "chrome",
       "request": "launch",
-      "url": "http://localhost:5173",
+      "url": "http://localhost:8080",
       "webRoot": "${workspaceFolder}/src",
       "preLaunchTask": "vite-dev"
     }
