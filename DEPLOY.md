@@ -20,6 +20,8 @@ Set these on your host (never commit real values — `.env` is git-ignored).
 | `CASEFILE_ACCESS_PASSWORD` | recommended for pre-launch | Locks the API behind a shared password. Testers are prompted once. |
 | `RATE_LIMIT_API` | no | Requests / 15 min / IP (default `120`). |
 | `RATE_LIMIT_COSTLY` | no | Extract+Enrich calls / hour / IP (default `30`). |
+| `TRUST_PROXY` | recommended behind a proxy | Trust `X-Forwarded-For` so rate limits key on the real client IP. Set to the number of proxies in front of the app (e.g. `1` on Render/Railway/Fly). Leave unset when the app is directly internet-facing — trusting the header there lets clients spoof it and bypass rate limits. |
+| `MAX_DOWNLOAD_BYTES` | no | Hard ceiling on a single court-download fetch (default `2000000` = 2 MB). Responses larger than this are aborted mid-stream so a hostile endpoint can't exhaust memory. |
 | `PORT` | no | Hosts set this automatically. |
 
 ## ⚠️ Cost protection (read before going public)

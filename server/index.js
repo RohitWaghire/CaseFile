@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import net from "net";
+import http from "http";
+import https from "https";
 import dns from "dns/promises";
 import { fileURLToPath } from "url";
 import { mkdir, writeFile } from "fs/promises";
@@ -198,50 +200,117 @@ function isBlockedIp(ip) {
   return true; // not a valid IP literal — treat as blocked
 }
 
-async function isPublicHttpUrl(rawUrl) {
+// Hard ceiling on any single third-party download we will buffer.
+const MAX_DOWNLOAD_BYTES = Number(process.env.MAX_DOWNLOAD_BYTES) || 2_000_000;
+
+// Validate a URL and return the exact address to connect to. Returning the
+// address (rather than a bare boolean) lets the caller pin the connection to the
+// IP that was actually validated — without pinning, the hostname is resolved a
+// second time at connect and a hostile DNS server can answer "public" during
+// validation and "internal" at connect time (DNS rebinding).
+async function resolvePublicUrl(rawUrl) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
   } catch {
-    return false;
+    return null;
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
 
   const host = parsed.hostname;
-  // Reject bare IP literals that are already private/loopback/link-local.
-  if (net.isIP(host) && isBlockedIp(host)) return false;
+  // Bare IP literal: no DNS involved, so validate it directly.
+  const literal = net.isIP(host);
+  if (literal) {
+    if (isBlockedIp(host)) return null;
+    return { parsed, address: host, family: literal };
+  }
 
-  // Resolve the hostname and reject if any address maps to a blocked range.
+  // Resolve once, reject if ANY answer is non-public, and pin the first address.
   try {
     const records = await dns.lookup(host, { all: true });
-    if (!records.length) return false;
+    if (!records.length) return null;
     for (const { address } of records) {
-      if (isBlockedIp(address)) return false;
+      if (isBlockedIp(address)) return null;
     }
+    return { parsed, address: records[0].address, family: records[0].family };
   } catch {
-    return false; // unresolvable host — do not fetch
+    return null; // unresolvable host — do not fetch
   }
-  return true;
 }
 
-// Redirect-safe fetch: validates every hop against the SSRF guard. fetch()'s
-// default redirect:"follow" would let a public URL 3xx to an internal address
-// (e.g. 169.254.169.254 cloud metadata), bypassing the initial isPublicHttpUrl()
-// check. We follow manually and re-validate each Location target before hitting it.
-async function safeFetch(rawUrl, { headers = {}, timeoutMs = 5000, maxRedirects = 5 } = {}) {
-  const signal = AbortSignal.timeout(timeoutMs);
+// Single request to an already-validated target, pinned to `address`. The URL's
+// hostname is preserved so the Host header and TLS SNI stay correct.
+function requestPinned({ parsed, address, family }, { headers, timeoutMs }) {
+  return new Promise((resolve, reject) => {
+    const mod = parsed.protocol === "https:" ? https : http;
+    // Node calls lookup with {all:true} when autoSelectFamily is on (default in
+    // Node 20+), which expects an array; older callers expect (address, family).
+    const lookup = (_hostname, opts, cb) =>
+      opts && opts.all ? cb(null, [{ address, family }]) : cb(null, address, family);
+
+    const req = mod.request(parsed, { method: "GET", headers, lookup }, resolve);
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("request timed out")));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+// Read a response body with a hard byte ceiling, aborting mid-stream once the
+// limit is passed. Buffering the whole body first (res.text()) would let a
+// hostile endpoint stream unbounded data and exhaust memory before any cap.
+async function readCapped(res, maxBytes) {
+  const declared = Number(res.headers["content-length"]);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    res.destroy();
+    return null;
+  }
+  const chunks = [];
+  let total = 0;
+  try {
+    for await (const chunk of res) {
+      total += chunk.length;
+      if (total > maxBytes) {
+        res.destroy();
+        return null; // oversized — stop reading immediately
+      }
+      chunks.push(chunk);
+    }
+  } catch {
+    return null;
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+// Redirect-safe, rebinding-safe, size-capped fetch for third-party URLs.
+// Every hop is re-validated and pinned; the body is streamed under a byte cap.
+async function safeFetch(
+  rawUrl,
+  { headers = {}, timeoutMs = 5000, maxRedirects = 5, maxBytes = MAX_DOWNLOAD_BYTES } = {}
+) {
   let url = rawUrl;
   for (let hop = 0; hop <= maxRedirects; hop++) {
-    if (!(await isPublicHttpUrl(url))) return null; // blocked or unresolvable target
-    const res = await fetch(url, { headers, redirect: "manual", signal });
-    if (res.status < 300 || res.status >= 400) return res; // final (non-redirect) response
-    const loc = res.headers.get("location");
-    if (!loc) return res; // redirect without a target — treat as final
-    try {
-      url = new URL(loc, url).toString(); // resolve relative redirects
-    } catch {
-      return null;
+    const target = await resolvePublicUrl(url);
+    if (!target) return null; // blocked, unresolvable, or non-http(s)
+
+    const res = await requestPinned(target, { headers, timeoutMs });
+    const status = res.statusCode;
+
+    if (status >= 300 && status < 400) {
+      const loc = res.headers.location;
+      res.resume(); // drain so the socket can be reused/freed
+      if (!loc) return null;
+      try {
+        url = new URL(loc, url).toString(); // resolve relative redirects
+      } catch {
+        return null;
+      }
+      continue; // next hop re-validates + re-pins at the top of the loop
     }
+
+    const contentType = String(res.headers["content-type"] || "").toLowerCase();
+    const text = await readCapped(res, maxBytes);
+    if (text === null) return null; // oversized or read error
+    return { ok: status >= 200 && status < 300, status, contentType, text };
   }
   return null; // too many redirects
 }
@@ -279,10 +348,10 @@ async function fetchOpinionFullText(caseItem) {
       if (res && res.ok) {
         // Only accept textual downloads. Court sites frequently serve PDFs,
         // whose raw bytes would otherwise be dumped as mojibake.
-        const ctype = (res.headers.get("content-type") || "").toLowerCase();
+        const ctype = res.contentType;
         const isTextual = /text\/html|xhtml|text\/plain/.test(ctype) || ctype === "";
         if (isTextual) {
-          const raw = await res.text();
+          const raw = res.text;
           if (!looksBinary(raw)) {
             const text = cleanText(raw);
             if (text && text.length > 200) {
@@ -574,7 +643,9 @@ app.post("/api/deliver", async (req, res) => {
   }
 });
 
-app.get("/api/case/:id", async (req, res) => {
+// Fetches a third-party download URL like /api/extract, so it carries the same
+// tighter limiter rather than only the generous baseline one.
+app.get("/api/case/:id", costlyLimiter, async (req, res) => {
   try {
     const id = req.params.id;
     const seed = {

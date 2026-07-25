@@ -146,7 +146,10 @@ export function Research({ initialQuery }: ResearchProps) {
       const idx = results.findIndex((r) => r.Id === selectedId);
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        const next = results[Math.min(results.length - 1, Math.max(0, idx) + 1)];
+        // From no selection (idx === -1), land on the first result; otherwise
+        // advance one, clamped to the last result.
+        const nextIdx = idx < 0 ? 0 : Math.min(results.length - 1, idx + 1);
+        const next = results[nextIdx];
         if (next) setSelectedId(next.Id);
       }
       if (e.key === "ArrowUp") {
@@ -187,8 +190,12 @@ export function Research({ initialQuery }: ResearchProps) {
           };
         })
       );
+      const skipped = data.skipped ?? 0;
       setStatus(
-        `Extracted text for ${data.count} case${data.count === 1 ? "" : "s"}. Ready to export.`
+        `Extracted text for ${data.count} case${data.count === 1 ? "" : "s"}.` +
+          (skipped > 0
+            ? ` ${skipped} case${skipped === 1 ? "" : "s"} beyond the per-run limit were skipped.`
+            : " Ready to export.")
       );
     } catch (err) {
       setError((err as Error).message || "Extract failed");

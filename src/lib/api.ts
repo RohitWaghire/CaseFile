@@ -55,6 +55,8 @@ export interface SearchResponse {
 
 export interface ExtractResponse {
   count: number;
+  requested?: number;
+  skipped?: number;
   cases: CaseRecord[];
   schema: string[];
 }
