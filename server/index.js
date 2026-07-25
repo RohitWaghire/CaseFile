@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import path from "path";
+import net from "net";
+import dns from "dns/promises";
 import { fileURLToPath } from "url";
 import { mkdir, writeFile } from "fs/promises";
 import rateLimit from "express-rate-limit";
@@ -24,7 +26,20 @@ const ARCHIVE_DIR = process.env.CASEFILE_ARCHIVE_DIR || "";
 const ACCESS_PASSWORD = process.env.CASEFILE_ACCESS_PASSWORD || "";
 
 // Behind a host proxy (Render/Railway/Fly), trust it so rate-limit sees real IPs.
-app.set("trust proxy", 1);
+// Only enable when explicitly configured: trusting the proxy unconditionally lets
+// any client spoof `X-Forwarded-For` and sidestep the per-IP rate limits below.
+// TRUST_PROXY accepts a hop count ("1"), a boolean ("true"/"false"), or an
+// Express trust-proxy expression such as "loopback" / a subnet.
+const TRUST_PROXY = process.env.TRUST_PROXY;
+if (TRUST_PROXY !== undefined && TRUST_PROXY !== "") {
+  if (/^\d+$/.test(TRUST_PROXY)) {
+    app.set("trust proxy", Number(TRUST_PROXY));
+  } else if (TRUST_PROXY === "true" || TRUST_PROXY === "false") {
+    app.set("trust proxy", TRUST_PROXY === "true");
+  } else {
+    app.set("trust proxy", TRUST_PROXY);
+  }
+}
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
@@ -149,6 +164,88 @@ function looksBinary(s) {
   return head.length ? bad / head.length > 0.05 : false;
 }
 
+// SSRF guard: only allow fetching public http(s) URLs. Court download links are
+// third-party hosts we cannot enumerate, so instead of a host allow-list we
+// reject any URL that resolves to a private, loopback, link-local, or otherwise
+// non-public address. This blocks a client-supplied downloadUrl from being used
+// to reach internal services or cloud metadata endpoints via this server.
+function isBlockedIp(ip) {
+  const type = net.isIP(ip); // 4, 6, or 0
+  if (type === 4) {
+    const p = ip.split(".").map(Number);
+    if (p.length !== 4 || p.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return true;
+    const [a, b] = p;
+    if (a === 0) return true; // "this" network
+    if (a === 10) return true; // private
+    if (a === 127) return true; // loopback
+    if (a === 169 && b === 254) return true; // link-local (incl. cloud metadata)
+    if (a === 172 && b >= 16 && b <= 31) return true; // private
+    if (a === 192 && b === 168) return true; // private
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+    if (a >= 224) return true; // multicast + reserved
+    return false;
+  }
+  if (type === 6) {
+    const v = ip.toLowerCase().split("%")[0]; // drop zone id
+    if (v === "::1" || v === "::") return true; // loopback / unspecified
+    if (v.startsWith("fe80")) return true; // link-local
+    if (v.startsWith("fc") || v.startsWith("fd")) return true; // unique local
+    // IPv4-mapped IPv6 (::ffff:a.b.c.d) — validate the embedded IPv4.
+    const mapped = v.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped) return isBlockedIp(mapped[1]);
+    return false;
+  }
+  return true; // not a valid IP literal — treat as blocked
+}
+
+async function isPublicHttpUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+
+  const host = parsed.hostname;
+  // Reject bare IP literals that are already private/loopback/link-local.
+  if (net.isIP(host) && isBlockedIp(host)) return false;
+
+  // Resolve the hostname and reject if any address maps to a blocked range.
+  try {
+    const records = await dns.lookup(host, { all: true });
+    if (!records.length) return false;
+    for (const { address } of records) {
+      if (isBlockedIp(address)) return false;
+    }
+  } catch {
+    return false; // unresolvable host — do not fetch
+  }
+  return true;
+}
+
+// Redirect-safe fetch: validates every hop against the SSRF guard. fetch()'s
+// default redirect:"follow" would let a public URL 3xx to an internal address
+// (e.g. 169.254.169.254 cloud metadata), bypassing the initial isPublicHttpUrl()
+// check. We follow manually and re-validate each Location target before hitting it.
+async function safeFetch(rawUrl, { headers = {}, timeoutMs = 5000, maxRedirects = 5 } = {}) {
+  const signal = AbortSignal.timeout(timeoutMs);
+  let url = rawUrl;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    if (!(await isPublicHttpUrl(url))) return null; // blocked or unresolvable target
+    const res = await fetch(url, { headers, redirect: "manual", signal });
+    if (res.status < 300 || res.status >= 400) return res; // final (non-redirect) response
+    const loc = res.headers.get("location");
+    if (!loc) return res; // redirect without a target — treat as final
+    try {
+      url = new URL(loc, url).toString(); // resolve relative redirects
+    } catch {
+      return null;
+    }
+  }
+  return null; // too many redirects
+}
+
 async function fetchOpinionFullText(caseItem) {
   // 1) Authenticated API path
   if (TOKEN && caseItem.opinionId) {
@@ -168,17 +265,18 @@ async function fetchOpinionFullText(caseItem) {
     }
   }
 
-  // 2) Public download_url from court site when present
+  // 2) Public download_url from court site when present. safeFetch validates the
+  // URL and every redirect hop against the SSRF guard before fetching.
   if (caseItem.downloadUrl && /^https?:\/\//i.test(caseItem.downloadUrl)) {
     try {
-      const res = await fetch(caseItem.downloadUrl, {
+      const res = await safeFetch(caseItem.downloadUrl, {
         headers: {
           "User-Agent": "CaseFile/1.0 (legal-research-demo)",
           Accept: "text/html,application/xhtml+xml,text/plain",
         },
-        signal: AbortSignal.timeout(5000),
+        timeoutMs: 5000,
       });
-      if (res.ok) {
+      if (res && res.ok) {
         // Only accept textual downloads. Court sites frequently serve PDFs,
         // whose raw bytes would otherwise be dumped as mojibake.
         const ctype = (res.headers.get("content-type") || "").toLowerCase();
@@ -377,7 +475,11 @@ app.post("/api/extract", costlyLimiter, async (req, res) => {
       return res.status(400).json({ error: "Body must include cases: []" });
     }
 
-    const limit = Math.min(cases.length, 12);
+    // Cap how many opinions we scrape per call to bound cost/latency. The default
+    // search page is 15, so cover a full page; anything beyond is reported as
+    // skipped rather than silently dropped.
+    const MAX_EXTRACT = Number(process.env.EXTRACT_MAX) || 15;
+    const limit = Math.min(cases.length, MAX_EXTRACT);
     const extracted = [];
 
     for (let i = 0; i < limit; i++) {
@@ -401,6 +503,8 @@ app.post("/api/extract", costlyLimiter, async (req, res) => {
 
     res.json({
       count: extracted.length,
+      requested: cases.length,
+      skipped: Math.max(0, cases.length - limit),
       cases: extracted,
       schema: ["Id", "Link", "Title", "opinionText"],
     });
