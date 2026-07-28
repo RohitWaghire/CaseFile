@@ -22,6 +22,8 @@ Set these on your host (never commit real values — `.env` is git-ignored).
 | `RATE_LIMIT_COSTLY` | no | Extract+Enrich calls / hour / IP (default `30`). |
 | `TRUST_PROXY` | recommended behind a proxy | Trust `X-Forwarded-For` so rate limits key on the real client IP. Set to the number of proxies in front of the app (e.g. `1` on Render/Railway/Fly). Leave unset when the app is directly internet-facing — trusting the header there lets clients spoof it and bypass rate limits. |
 | `MAX_DOWNLOAD_BYTES` | no | Hard ceiling on a single court-download fetch (default `2000000` = 2 MB). Responses larger than this are aborted mid-stream so a hostile endpoint can't exhaust memory. |
+| `DOWNLOAD_TIMEOUT_MS` | no | Absolute wall-clock budget for one download — DNS, connect, all redirects, and body (default `10000`). Enforced even if the peer trickles bytes to defeat an idle timeout. |
+| `MAX_DELIVER_BATCH` | no | Max records one `/api/deliver` call may fan out to webhook/disk sinks (default `25`). Extras are reported as `skipped`. |
 | `PORT` | no | Hosts set this automatically. |
 
 ## ⚠️ Cost protection (read before going public)

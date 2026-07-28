@@ -49,7 +49,7 @@ Get a free Gemini key at https://aistudio.google.com/. `GET /api/health` reports
 | `GET /api/search?q=…` | Search published opinions |
 | `POST /api/extract` | Body `{ cases: [...] }` - enrich with fuller text |
 | `POST /api/enrich` | Body `{ cases: [...] }` - LLM summary / jurisdiction / outcome / precedents (needs `GOOGLE_GEMINI_KEY`) |
-| `POST /api/deliver` | Body `{ cases: [...] }` - send to webhook and/or archive to disk |
+| `POST /api/deliver` | Body `{ cases: [...] }` - send to webhook and/or archive to disk. Requires `CASEFILE_ACCESS_PASSWORD`; batch capped at `MAX_DELIVER_BATCH` (25). |
 | `GET /api/health` | Service status (token, enrichment, sinks) |
 
 ## Stack

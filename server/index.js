@@ -27,6 +27,9 @@ const ARCHIVE_DIR = process.env.CASEFILE_ARCHIVE_DIR || "";
 // /api call must send `x-access-password` (or ?access=) matching it.
 const ACCESS_PASSWORD = process.env.CASEFILE_ACCESS_PASSWORD || "";
 
+// Max records one /api/deliver call may fan out to webhook/disk sinks.
+const MAX_DELIVER_BATCH = Number(process.env.MAX_DELIVER_BATCH) || 25;
+
 // Behind a host proxy (Render/Railway/Fly), trust it so rate-limit sees real IPs.
 // Only enable when explicitly configured: trusting the proxy unconditionally lets
 // any client spoof `X-Forwarded-For` and sidestep the per-IP rate limits below.
@@ -240,7 +243,11 @@ async function resolvePublicUrl(rawUrl) {
 
 // Single request to an already-validated target, pinned to `address`. The URL's
 // hostname is preserved so the Host header and TLS SNI stay correct.
-function requestPinned({ parsed, address, family }, { headers, timeoutMs }) {
+//
+// `deadline` is an absolute wall-clock timestamp, not an idle timeout: a hostile
+// endpoint can trickle one byte at a time to reset an inactivity timer forever,
+// so the socket is destroyed once the deadline passes regardless of activity.
+function requestPinned({ parsed, address, family }, { headers, deadline }) {
   return new Promise((resolve, reject) => {
     const mod = parsed.protocol === "https:" ? https : http;
     // Node calls lookup with {all:true} when autoSelectFamily is on (default in
@@ -249,8 +256,17 @@ function requestPinned({ parsed, address, family }, { headers, timeoutMs }) {
       opts && opts.all ? cb(null, [{ address, family }]) : cb(null, address, family);
 
     const req = mod.request(parsed, { method: "GET", headers, lookup }, resolve);
-    req.setTimeout(timeoutMs, () => req.destroy(new Error("request timed out")));
-    req.on("error", reject);
+    const timer = setTimeout(
+      () => req.destroy(new Error("download deadline exceeded")),
+      Math.max(1, deadline - Date.now())
+    );
+    timer.unref?.(); // never hold the process open
+    const clear = () => clearTimeout(timer);
+    req.on("close", clear); // fires once the response is done or the socket dies
+    req.on("error", (err) => {
+      clear();
+      reject(err);
+    });
     req.end();
   });
 }
@@ -258,7 +274,7 @@ function requestPinned({ parsed, address, family }, { headers, timeoutMs }) {
 // Read a response body with a hard byte ceiling, aborting mid-stream once the
 // limit is passed. Buffering the whole body first (res.text()) would let a
 // hostile endpoint stream unbounded data and exhaust memory before any cap.
-async function readCapped(res, maxBytes) {
+async function readCapped(res, maxBytes, deadline) {
   const declared = Number(res.headers["content-length"]);
   if (Number.isFinite(declared) && declared > maxBytes) {
     res.destroy();
@@ -268,6 +284,12 @@ async function readCapped(res, maxBytes) {
   let total = 0;
   try {
     for await (const chunk of res) {
+      // Stop on wall-clock deadline as well as size: a slow trickle can stay
+      // under the byte cap indefinitely while holding the connection open.
+      if (deadline && Date.now() > deadline) {
+        res.destroy();
+        return null;
+      }
       total += chunk.length;
       if (total > maxBytes) {
         res.destroy();
@@ -285,19 +307,34 @@ async function readCapped(res, maxBytes) {
 // Every hop is re-validated and pinned; the body is streamed under a byte cap.
 async function safeFetch(
   rawUrl,
-  { headers = {}, timeoutMs = 5000, maxRedirects = 5, maxBytes = MAX_DOWNLOAD_BYTES } = {}
+  { headers = {}, totalTimeoutMs = 10_000, maxRedirects = 5, maxBytes = MAX_DOWNLOAD_BYTES } = {}
 ) {
+  // One absolute budget for the whole operation — DNS, connect, every redirect
+  // hop, and the body read. A per-request idle timeout would let a hostile host
+  // trickle bytes (or chain slow redirects) and hold resources indefinitely.
+  const deadline = Date.now() + totalTimeoutMs;
   let url = rawUrl;
+
   for (let hop = 0; hop <= maxRedirects; hop++) {
+    if (Date.now() >= deadline) return null;
+
     const target = await resolvePublicUrl(url);
     if (!target) return null; // blocked, unresolvable, or non-http(s)
+    if (Date.now() >= deadline) return null; // DNS may have consumed the budget
 
-    const res = await requestPinned(target, { headers, timeoutMs });
+    let res;
+    try {
+      res = await requestPinned(target, { headers, deadline });
+    } catch {
+      return null; // connection error or deadline hit
+    }
     const status = res.statusCode;
 
     if (status >= 300 && status < 400) {
       const loc = res.headers.location;
-      res.resume(); // drain so the socket can be reused/freed
+      // Destroy rather than drain: draining a hostile redirect body is itself an
+      // unbounded read, and we never need a redirect's content.
+      res.destroy();
       if (!loc) return null;
       try {
         url = new URL(loc, url).toString(); // resolve relative redirects
@@ -308,8 +345,8 @@ async function safeFetch(
     }
 
     const contentType = String(res.headers["content-type"] || "").toLowerCase();
-    const text = await readCapped(res, maxBytes);
-    if (text === null) return null; // oversized or read error
+    const text = await readCapped(res, maxBytes, deadline);
+    if (text === null) return null; // oversized, too slow, or read error
     return { ok: status >= 200 && status < 300, status, contentType, text };
   }
   return null; // too many redirects
@@ -343,7 +380,8 @@ async function fetchOpinionFullText(caseItem) {
           "User-Agent": "CaseFile/1.0 (legal-research-demo)",
           Accept: "text/html,application/xhtml+xml,text/plain",
         },
-        timeoutMs: 5000,
+        // Total wall-clock budget for DNS + connect + redirects + body.
+        totalTimeoutMs: Number(process.env.DOWNLOAD_TIMEOUT_MS) || 10_000,
       });
       if (res && res.ok) {
         // Only accept textual downloads. Court sites frequently serve PDFs,
@@ -614,7 +652,7 @@ app.post("/api/enrich", costlyLimiter, async (req, res) => {
   }
 });
 
-app.post("/api/deliver", async (req, res) => {
+app.post("/api/deliver", costlyLimiter, async (req, res) => {
   try {
     const cases = Array.isArray(req.body?.cases) ? req.body.cases : [];
     if (!cases.length) {
@@ -626,14 +664,28 @@ app.post("/api/deliver", async (req, res) => {
         detail: "Set CASEFILE_WEBHOOK_URL and/or CASEFILE_ARCHIVE_DIR.",
       });
     }
+    // Fail closed: delivery turns one request into outbound POSTs / disk writes,
+    // so it must never be reachable anonymously. Require the access gate.
+    if (!ACCESS_PASSWORD) {
+      return res.status(403).json({
+        error: "Delivery requires authorization",
+        detail:
+          "Set CASEFILE_ACCESS_PASSWORD to enable /api/deliver when a webhook or archive sink is configured.",
+      });
+    }
 
+    // Cap the fan-out: one 2MB request could otherwise carry tens of thousands
+    // of records and amplify into that many outbound requests or file writes.
+    const limit = Math.min(cases.length, MAX_DELIVER_BATCH);
     const delivered = [];
-    for (const c of cases) {
+    for (let i = 0; i < limit; i++) {
+      const c = cases[i];
       delivered.push({ Id: c.Id, ...(await deliverRecord(c)) });
     }
 
     res.json({
       count: delivered.length,
+      skipped: Math.max(0, cases.length - limit),
       delivered,
       sinks: { webhook: Boolean(WEBHOOK_URL), archive: Boolean(ARCHIVE_DIR) },
     });
