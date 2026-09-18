@@ -84,37 +84,11 @@ export function exportSchema(cases: CaseRecord[]) {
   }));
 }
 
-// Access gate: when the server runs with CASEFILE_ACCESS_PASSWORD set, API calls
-// must carry a matching password. We store it locally and prompt once on a 401.
-const ACCESS_KEY = "casefile:access";
-
-function accessHeaders(base: Record<string, string> = {}): Record<string, string> {
-  const pw = localStorage.getItem(ACCESS_KEY);
-  return pw ? { ...base, "x-access-password": pw } : base;
-}
-
-// Single fetch wrapper: injects the access header and, on a 401, prompts for the
-// password once and retries. Keeps the gate usable without a full login screen.
-async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
-  const withPw = { ...init, headers: accessHeaders(init.headers as Record<string, string>) };
-  let res = await fetch(input, withPw);
-  if (res.status === 401) {
-    const pw = window.prompt("This CaseFile instance is private. Enter the access password:");
-    if (pw) {
-      localStorage.setItem(ACCESS_KEY, pw);
-      res = await fetch(input, {
-        ...init,
-        headers: accessHeaders(init.headers as Record<string, string>),
-      });
-    }
-    if (res.status === 401) localStorage.removeItem(ACCESS_KEY);
-  }
-  return res;
-}
+const apiFetch = fetch;
 
 export async function searchCases(
   query: string,
-  options?: { pageSize?: number; published?: boolean; signal?: AbortSignal }
+  options?: { pageSize?: number; published?: boolean; court?: string; signal?: AbortSignal }
 ): Promise<SearchResponse> {
   const params = new URLSearchParams({
     q: query,
@@ -122,6 +96,7 @@ export async function searchCases(
     order_by: "dateFiled desc",
   });
   if (options?.published !== false) params.set("stat_Published", "on");
+  if (options?.court) params.set("court", options.court);
 
   const res = await apiFetch(`/api/search?${params}`, { signal: options?.signal });
   if (!res.ok) {
@@ -188,3 +163,191 @@ export function slugifyQuery(q: string) {
       .slice(0, 48) || "cases"
   );
 }
+
+// ---------------------------------------------------------------------------
+// CaseFile AI Autonomous Agent Types & SSE Client
+// ---------------------------------------------------------------------------
+
+export interface AgentChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp: string;
+  casesCount?: number;
+}
+
+export interface AgentThought {
+  id: string;
+  title: string;
+  detail: string;
+  phase: "planning" | "reading" | "verifying" | "synthesis" | "action";
+  timestamp: string;
+}
+
+export interface AgentAction {
+  id: string;
+  tool: string;
+  query: string;
+  court?: string;
+  purpose?: string;
+  timestamp: string;
+}
+
+export interface AgentObservation {
+  id: string;
+  tool: string;
+  foundCount?: number;
+  returnedCount?: number;
+  sampleTitles?: string[];
+  timestamp: string;
+}
+
+export interface FavorableCase {
+  id: string;
+  title: string;
+  citation: string;
+  holding: string;
+  strategicValue: string;
+  link?: string;
+}
+
+export interface AdverseCase {
+  id: string;
+  title: string;
+  citation: string;
+  opposingArgument: string;
+  distinguishingStrategy: string;
+  link?: string;
+}
+
+export interface AdversarialMatrix {
+  favorable: FavorableCase[];
+  adverse: AdverseCase[];
+}
+
+export interface VerifiedCitation {
+  id: string;
+  caseTitle: string;
+  citation: string;
+  court: string;
+  dateFiled?: string | null;
+  docketNumber?: string;
+  link?: string;
+  status: "verified" | "partial" | "unverified";
+  confidence?: number;
+}
+
+export interface IracMemo {
+  title: string;
+  executiveSummary: string;
+  issue: string;
+  rule: string;
+  application: string;
+  counterArguments: string;
+  conclusion: string;
+}
+
+export type AgentEvent =
+  | { type: "start"; data: { message: string; objective: string; hasApiKey: boolean } }
+  | { type: "thought"; data: AgentThought }
+  | { type: "action"; data: AgentAction }
+  | { type: "observation"; data: AgentObservation }
+  | { type: "matrix_update"; data: { matrix: AdversarialMatrix } }
+  | { type: "citations_verified"; data: { citations: VerifiedCitation[] } }
+  | { type: "memo_ready"; data: { memo: IracMemo } }
+  | { type: "message"; data: { role: "assistant"; content: string; casesCount?: number } }
+  | { type: "completed"; data: { cases: CaseRecord[]; matrix: AdversarialMatrix; citations: VerifiedCitation[]; memo: IracMemo | null } }
+  | { type: "error"; data: { message: string } }
+  | { type: "done"; data: Record<string, unknown> };
+
+export const GEMINI_KEY_STORAGE = "casefile:gemini_key";
+
+export function getStoredGeminiKey(): string {
+  try {
+    return localStorage.getItem(GEMINI_KEY_STORAGE) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setStoredGeminiKey(key: string) {
+  try {
+    if (key.trim()) {
+      localStorage.setItem(GEMINI_KEY_STORAGE, key.trim());
+    } else {
+      localStorage.removeItem(GEMINI_KEY_STORAGE);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export async function streamAgentChat({
+  messages,
+  court,
+  onEvent,
+  signal,
+  customApiKey,
+}: {
+  messages: Array<{ role: string; content: string }>;
+  court?: string;
+  onEvent: (event: AgentEvent) => void;
+  signal?: AbortSignal;
+  customApiKey?: string;
+}): Promise<void> {
+  const apiKey = customApiKey || getStoredGeminiKey();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (apiKey) {
+    headers["x-gemini-key"] = apiKey;
+  }
+
+  const response = await fetch("/api/agent/chat", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ messages, court }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || errData.detail || `Agent connection failed (${response.status})`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("ReadableStream not supported by browser.");
+
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let currentEventType = "message";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        currentEventType = "message";
+        continue;
+      }
+      if (trimmed.startsWith("event:")) {
+        currentEventType = trimmed.slice(6).trim();
+      } else if (trimmed.startsWith("data:")) {
+        const jsonStr = trimmed.slice(5).trim();
+        try {
+          const parsed = JSON.parse(jsonStr);
+          onEvent({ type: currentEventType as AgentEvent["type"], data: parsed } as AgentEvent);
+        } catch {
+          // non-json keepalive or line
+        }
+      }
+    }
+  }
+}
+

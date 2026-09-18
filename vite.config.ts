@@ -21,5 +21,18 @@ export default defineConfig({
   optimizeDeps: {
     include: ["react", "react-dom", "react/jsx-runtime", "gsap", "gsap/ScrollTrigger", "motion/react"],
   },
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom"],
+          gsap: ["gsap", "gsap/ScrollTrigger", "@gsap/react"],
+          motion: ["motion"],
+          icons: ["@phosphor-icons/react"],
+        },
+      },
+    },
+  },
   clearScreen: false,
 });

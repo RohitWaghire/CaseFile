@@ -1,57 +1,98 @@
-# CaseFile
+# CaseFile AI — Autonomous Legal Research Agent
 
-Legal research desk for attorneys, law students, and researchers. Search a topic, pull matching opinions from [CourtListener](https://www.courtlistener.com/), structure each case as **Id / Link / Title / opinion text**, then view or export JSON.
+> **LexHack 2026 Submission**  
+> Tracks: **⚡ Legal Automation & Workflow Innovation** · **🛡️ AI Safety, Ethics & Governance** · **📜 Digital Rights**
 
-## Run locally
+**CaseFile AI** is an autonomous conversational legal research agent and litigation strategy workbench. Rather than acting as a simple search box or generic chat wrapper, CaseFile AI executes an end-to-end **Reasoning + Acting (ReAct)** loop across live federal and state court records from [CourtListener](https://www.courtlistener.com/) (Free Law Project):
+
+1. **Deconstructs Legal Objectives**: Automatically identifies statutory frameworks, relevant circuit jurisdictions, majority standards, and potential counter-arguments.
+2. **Autonomous Tool Execution**: Dispatches targeted queries to CourtListener REST API v4, reads and filters opinion full texts, and separates holdings from dicta.
+3. **Adversarial Precedent Mapping**: Organizes case law into an affirmative strategy alongside opposing counsel's best counter-precedents and tactical distinguishing arguments.
+4. **Anti-Hallucination Citation Verification**: Audits every cited legal authority against authentic CourtListener docket clusters to eliminate fabricated case citations.
+5. **Formal IRAC Legal Memorandum**: Synthesizes a structured legal brief (Issue, Rule, Application, Counter-arguments, Conclusion) with one-click Markdown, Printable PDF, and JSON export.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    CaseFile AI Studio (Split-Screen UI)                     │
+│                                                                             │
+│   ┌───────────────────────────────┐     ┌───────────────────────────────┐   │
+│   │     LEFT: Conversational      │     │     RIGHT: Dynamic Artifact   │   │
+│   │     Research Assistant        │     │     Legal Canvas              │   │
+│   │                               │     │                               │   │
+│   │  • Session History Drawer     │     │  • Verified Case Cards        │   │
+│   │  • Multi-turn chat input      │     │  • Adversarial Matrix         │   │
+│   │  • Live ReAct Thought Stream  │◄───►│  • IRAC Legal Memo            │   │
+│   │  • Pause / Steer / Resume     │     │  • Inline Guardrail Badges    │   │
+│   │  • BYOK Settings Drawer       │     │  • MD / PDF / JSON Export     │   │
+│   └───────────────┬───────────────┘     └───────────────┬───────────────┘   │
+└───────────────────┼─────────────────────────────────────┼───────────────────┘
+                    │                                     │
+                    │ SSE Stream (/api/agent/chat)        │
+                    ▼                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Express Backend (server/agent.js)                      │
+│                                                                             │
+│   • ReAct Agent Loop with Gemini 2.0 / Flash (Function Calling / Reasoning) │
+│   • Tool: CourtListener Search (filtered by circuit, court, published)      │
+│   • Tool: Full Opinion Text Extractor (SSRF-safe, binary sniffing)          │
+│   • Tool: Citation Verification Engine (validates against cluster IDs)      │
+│   • Tool: Adversarial Matrix Classifier & IRAC Synthesizer                  │
+│   • Dual-Key Resolver (req.headers['x-gemini-key'] || env.GOOGLE_GEMINI_KEY)│
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Quick Start (Local Run)
 
 ```bash
-cd casefile-app
+# 1. Install dependencies
 npm install
+
+# 2. Start dev server (Express backend on :8787 + Vite on :8080)
 npm run dev
 ```
 
-- App: http://localhost:8080  
-- API: http://localhost:8787  
+- **App**: `http://localhost:8080`
+- **Backend API**: `http://localhost:8787`
 
-## Optional full-text API token
+---
 
-Without a token, CaseFile uses the public CourtListener search index (titles, links, snippets) and attempts court `download_url` pages when present.
+## API Keys & Authentication (Dual Mode)
 
-For authenticated opinion text from the REST API:
+CaseFile AI supports **Dual-Mode Authentication**:
 
-```bash
-# Windows PowerShell
-$env:COURTLISTENER_TOKEN="your-token"
-npm run dev
-```
+1. **Server Environment Variable**:
+   ```bash
+   # Windows PowerShell
+   $env:GOOGLE_GEMINI_KEY="your-gemini-key"
+   $env:COURTLISTENER_TOKEN="your-cl-token" # optional for full text
+   npm run dev
+   ```
+2. **Bring-Your-Own-Key (BYOK) in the UI**:
+   - Hackathon judges and testers can simply click the **Set API Key** button in the top-right of the Agent Studio and paste their personal Gemini API key. It is saved directly in browser `localStorage` and sent via `x-gemini-key`.
+   - Free Gemini keys can be generated in seconds at [Google AI Studio](https://aistudio.google.com/apikey).
 
-Create a free token at https://www.courtlistener.com/api/
+---
 
-## Optional LLM enrichment & delivery
+## API Endpoints
 
-These mirror the original n8n workflow's Google Gemini extraction and webhook / write-to-disk steps. All are off by default and degrade gracefully when unset — the app stays fully usable without them.
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/api/agent/chat` | `POST` | Primary Server-Sent Events (SSE) streaming endpoint driving the autonomous ReAct agent loop. |
+| `/api/search?q=…` | `GET` | Search published CourtListener opinions with snippet extraction. |
+| `/api/extract` | `POST` | SSRF-safe batch extraction of full opinion text. |
+| `/api/enrich` | `POST` | Multi-field structured LLM extraction. |
+| `/api/health` | `GET` | Reports service status, CourtListener token, and Gemini key availability. |
 
-```bash
-# Windows PowerShell
-$env:GOOGLE_GEMINI_KEY="your-gemini-key"      # enables POST /api/enrich (summary, jurisdiction, outcome, precedents)
-$env:GEMINI_MODEL="gemini-2.0-flash"          # optional, defaults to gemini-2.0-flash
-$env:CASEFILE_WEBHOOK_URL="https://…"         # POST each record to a webhook
-$env:CASEFILE_ARCHIVE_DIR="./archive"         # write Case-{Id}.json to disk
-npm run dev
-```
+---
 
-Get a free Gemini key at https://aistudio.google.com/. `GET /api/health` reports which features are active.
+## Tech Stack
 
-## API
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/search?q=…` | Search published opinions |
-| `POST /api/extract` | Body `{ cases: [...] }` - enrich with fuller text |
-| `POST /api/enrich` | Body `{ cases: [...] }` - LLM summary / jurisdiction / outcome / precedents (needs `GOOGLE_GEMINI_KEY`) |
-| `POST /api/deliver` | Body `{ cases: [...] }` - send to webhook and/or archive to disk. Requires `CASEFILE_ACCESS_PASSWORD`; batch capped at `MAX_DELIVER_BATCH` (25). |
-| `GET /api/health` | Service status (token, enrichment, sinks) |
-
-## Stack
-
-React + Vite, Express proxy, Motion, Phosphor Icons, CourtListener REST v4, optional Google Gemini for enrichment.
+- **Frontend**: React 19, TypeScript, Vite 7, Vanilla CSS design system, Motion, GSAP, Phosphor Icons.
+- **Backend**: Node.js, Express 5, Server-Sent Events (SSE), SSRF guardrail with IP pinning.
+- **Data & AI**: CourtListener REST API v4, Google Gemini 2.0 Flash (`gemini-2.0-flash`).

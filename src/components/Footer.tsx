@@ -3,17 +3,36 @@ export function Footer() {
     <footer className="footer">
       <div className="footer-inner">
         <div>
-          <strong>CaseFile</strong>
+          <span className="brand" aria-label="CaseFile AI">
+            <span className="brand-mark" aria-hidden>
+              CF
+            </span>
+            <span className="brand-text">
+              CaseFile <span className="brand-ai">AI</span>
+            </span>
+          </span>
           <p>
-            Case law research helper powered by the public CourtListener search
-            index. Structured for researchers who need title, link, and opinion
-            text in one export.
+            Autonomous legal research &amp; IRAC briefs — plans multi-step
+            CourtListener investigations and synthesizes verified briefs.
+          </p>
+          <p>
+            <a
+              href="https://lexhack-2026.devpost.com/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              LexHack 2026
+            </a>
           </p>
         </div>
         <div className="footer-meta">
           <p>
             Data from{" "}
-            <a href="https://www.courtlistener.com/" target="_blank" rel="noreferrer">
+            <a
+              href="https://www.courtlistener.com/"
+              target="_blank"
+              rel="noreferrer"
+            >
               CourtListener
             </a>{" "}
             / Free Law Project. Not legal advice. Verify citations against

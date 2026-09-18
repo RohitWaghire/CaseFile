@@ -37,3 +37,6 @@ archive
 *.njsproj
 *.sln
 *.sw?
+
+# Agent IDE workspace skills
+.agents/

@@ -6,29 +6,21 @@ import http from "http";
 import https from "https";
 import dns from "dns/promises";
 import { fileURLToPath } from "url";
-import { mkdir, writeFile } from "fs/promises";
 import rateLimit from "express-rate-limit";
+import { runAgentChatStream } from "./agent.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 8787;
 const CL_BASE = "https://www.courtlistener.com";
 const TOKEN = process.env.COURTLISTENER_TOKEN || process.env.CL_TOKEN || "";
+const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || process.env.CASEFILE_PASSWORD || "";
 
 // Optional LLM enrichment (mirrors the n8n Google Gemini extraction node).
 const GEMINI_KEY = process.env.GOOGLE_GEMINI_KEY || process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
 
-// Optional delivery sinks (mirror the n8n Webhook + Write-to-disk nodes).
-const WEBHOOK_URL = process.env.CASEFILE_WEBHOOK_URL || "";
-const ARCHIVE_DIR = process.env.CASEFILE_ARCHIVE_DIR || "";
-
 // Optional shared-password gate for a private/pre-launch deploy. When set, every
-// /api call must send `x-access-password` (or ?access=) matching it.
-const ACCESS_PASSWORD = process.env.CASEFILE_ACCESS_PASSWORD || "";
-
-// Max records one /api/deliver call may fan out to webhook/disk sinks.
-const MAX_DELIVER_BATCH = Number(process.env.MAX_DELIVER_BATCH) || 25;
 
 // Behind a host proxy (Render/Railway/Fly), trust it so rate-limit sees real IPs.
 // Only enable when explicitly configured: trusting the proxy unconditionally lets
@@ -45,7 +37,8 @@ if (TRUST_PROXY !== undefined && TRUST_PROXY !== "") {
     app.set("trust proxy", TRUST_PROXY);
   }
 }
-app.use(cors());
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
+app.use(CORS_ORIGINS.length ? cors({ origin: CORS_ORIGINS }) : cors());
 app.use(express.json({ limit: "2mb" }));
 
 // Rate limits. Cheap reads get a generous bucket; the LLM/scraping endpoints
@@ -475,51 +468,12 @@ async function enrichWithLlm(caseItem) {
   }
 }
 
-// Deliver one record to the configured sinks (webhook POST + disk archive).
-// Mirrors the n8n Webhook Notification and Write-to-disk nodes.
-async function deliverRecord(record) {
-  const results = {};
-
-  if (WEBHOOK_URL) {
-    try {
-      const r = await fetch(WEBHOOK_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(record),
-        signal: AbortSignal.timeout(8000),
-      });
-      results.webhook = r.ok ? "sent" : `failed:${r.status}`;
-    } catch (e) {
-      results.webhook = `error:${e.message}`;
-    }
-  }
-
-  if (ARCHIVE_DIR) {
-    try {
-      await mkdir(ARCHIVE_DIR, { recursive: true });
-      // Sanitize Id so it can never escape ARCHIVE_DIR via path segments.
-      const safeId = String(record.Id ?? "unknown").replace(/[^\w-]/g, "") || "unknown";
-      await writeFile(
-        path.join(ARCHIVE_DIR, `Case-${safeId}.json`),
-        JSON.stringify(record, null, 2),
-        "utf8"
-      );
-      results.archived = true;
-    } catch (e) {
-      results.archived = `error:${e.message}`;
-    }
-  }
-
-  return results;
-}
-
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "CaseFile",
     courtlistenerToken: Boolean(TOKEN),
     llmEnrichment: Boolean(GEMINI_KEY),
-    sinks: { webhook: Boolean(WEBHOOK_URL), archive: Boolean(ARCHIVE_DIR) },
   });
 });
 
@@ -543,6 +497,7 @@ app.get("/api/search", async (req, res) => {
     if (req.query.stat_Published === "on" || req.query.published === "1") {
       params.set("stat_Published", "on");
     }
+    if (req.query.court) params.set("court", String(req.query.court));
 
     const clRes = await clFetch(`/api/rest/v4/search/?${params.toString()}`);
     if (!clRes.ok) {
@@ -652,49 +607,6 @@ app.post("/api/enrich", costlyLimiter, async (req, res) => {
   }
 });
 
-app.post("/api/deliver", costlyLimiter, async (req, res) => {
-  try {
-    const cases = Array.isArray(req.body?.cases) ? req.body.cases : [];
-    if (!cases.length) {
-      return res.status(400).json({ error: "Body must include cases: []" });
-    }
-    if (!WEBHOOK_URL && !ARCHIVE_DIR) {
-      return res.status(400).json({
-        error: "No delivery sink configured",
-        detail: "Set CASEFILE_WEBHOOK_URL and/or CASEFILE_ARCHIVE_DIR.",
-      });
-    }
-    // Fail closed: delivery turns one request into outbound POSTs / disk writes,
-    // so it must never be reachable anonymously. Require the access gate.
-    if (!ACCESS_PASSWORD) {
-      return res.status(403).json({
-        error: "Delivery requires authorization",
-        detail:
-          "Set CASEFILE_ACCESS_PASSWORD to enable /api/deliver when a webhook or archive sink is configured.",
-      });
-    }
-
-    // Cap the fan-out: one 2MB request could otherwise carry tens of thousands
-    // of records and amplify into that many outbound requests or file writes.
-    const limit = Math.min(cases.length, MAX_DELIVER_BATCH);
-    const delivered = [];
-    for (let i = 0; i < limit; i++) {
-      const c = cases[i];
-      delivered.push({ Id: c.Id, ...(await deliverRecord(c)) });
-    }
-
-    res.json({
-      count: delivered.length,
-      skipped: Math.max(0, cases.length - limit),
-      delivered,
-      sinks: { webhook: Boolean(WEBHOOK_URL), archive: Boolean(ARCHIVE_DIR) },
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Deliver failed", detail: String(err.message || err) });
-  }
-});
-
 // Fetches a third-party download URL like /api/extract, so it carries the same
 // tighter limiter rather than only the generous baseline one.
 app.get("/api/case/:id", costlyLimiter, async (req, res) => {
@@ -722,6 +634,23 @@ app.get("/api/case/:id", costlyLimiter, async (req, res) => {
   }
 });
 
+// Autonomous Legal Agent SSE Chat Stream
+app.post("/api/agent/chat", async (req, res) => {
+  try {
+    await runAgentChatStream({
+      req,
+      res,
+      clToken: TOKEN,
+      defaultGeminiKey: GEMINI_KEY,
+    });
+  } catch (err) {
+    console.error("[agent] Unhandled chat stream error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Agent execution failed", detail: err.message });
+    }
+  }
+});
+
 // Production static serve (SPA fallback)
 const dist = path.join(__dirname, "..", "dist");
 app.use(express.static(dist));
@@ -736,9 +665,6 @@ app.listen(PORT, () => {
   console.log(`CaseFile API on http://localhost:${PORT}`);
   console.log(`CourtListener token: ${TOKEN ? "configured" : "not set (search + snippets)"}`);
   console.log(`LLM enrichment: ${GEMINI_KEY ? `${GEMINI_MODEL}` : "off (set GOOGLE_GEMINI_KEY)"}`);
-  console.log(
-    `Delivery sinks: webhook ${WEBHOOK_URL ? "on" : "off"}, archive ${ARCHIVE_DIR || "off"}`
-  );
   console.log(`Access gate: ${ACCESS_PASSWORD ? "ON (password required)" : "off (public)"}`);
   console.log(
     `Rate limits: ${apiLimiter.max ?? "?"}/15m api, ${costlyLimiter.max ?? "?"}/60m extract+enrich`
