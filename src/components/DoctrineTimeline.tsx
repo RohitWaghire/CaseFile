@@ -14,47 +14,47 @@ interface Milestone {
 const TIMELINE_EVENTS: Milestone[] = [
   {
     year: "1974",
-    era: "Pre-emption & Common Law",
+    era: "Early Foundation",
     title: "Kewanee Oil Co. v. Bicron Corp.",
     court: "U.S. Supreme Court (416 U.S. 470)",
-    holding: "State trade secret law is not preempted by federal patent law; reverse engineering is explicitly protected as lawful competition.",
-    impact: "Established the cornerstone constitutional rule that trade secret protection does not grant a monopoly against independent discovery or reverse engineering.",
+    holding: "State trade secret rules are allowed alongside federal patent law. Taking products apart to see how they work is clearly protected as fair business competition.",
+    impact: "Set the foundational rule that trade secret owners do not get a monopoly. Anyone is allowed to figure out a product on their own or take it apart lawfully.",
     doctrineStatus: "foundational",
   },
   {
     year: "1982",
-    era: "Appellate Consolidation",
+    era: "Appeals Court Ruling",
     title: "Chicago Lock Co. v. Fanberg",
     court: "U.S. Court of Appeals for the Ninth Circuit (676 F.2d 400)",
-    holding: "Purchasers of tubular lock picks who disassembled and published master key codes did not use 'improper means.'",
-    impact: "Formulated the 9th Circuit rule that a trade secret owner's rights only extend against those who obtain information through breach of confidence or wrongful acts.",
+    holding: "Lock buyers who took apart key cylinders and published the code combinations did not do anything illegal or dishonest.",
+    impact: "Created the famous 9th Circuit rule: a trade secret owner can only sue someone who broke a confidential promise or used illegal means.",
     doctrineStatus: "expansion",
   },
   {
     year: "2016",
-    era: "Federal Codification",
-    title: "Defend Trade Secrets Act (DTSA) Enactment",
+    era: "Federal Law Passed",
+    title: "Defend Trade Secrets Act (DTSA) Becomes Law",
     court: "U.S. Congress (18 U.S.C. § 1836 et seq.)",
-    holding: "Creates a federal civil cause of action for trade secret misappropriation while codifying an express affirmative exception for reverse engineering.",
-    impact: "Nationalized trade secret litigation and provided statutory immunity for reverse engineering and whistleblowing.",
+    holding: "Created a nationwide federal law for trade secret lawsuits while writing in an official protection for lawful reverse engineering.",
+    impact: "Protected reverse engineering and whistleblowers across the entire United States under federal law.",
     doctrineStatus: "statutory",
   },
   {
     year: "2021",
-    era: "Fair Use Interplay",
+    era: "Software & Fair Use",
     title: "Google LLC v. Oracle America, Inc.",
     court: "U.S. Supreme Court (141 S. Ct. 1183)",
-    holding: "Re-implementing software interfaces for interoperability constitutes transformative fair use.",
-    impact: "Harmonized copyright fair use standards with technical interoperability and reverse engineering principles.",
+    holding: "Copying software code interfaces so different programs can talk to each other counts as fair use under copyright law.",
+    impact: "Made it clear that developers can inspect and connect to existing software without infringing copyright.",
     doctrineStatus: "modern",
   },
   {
     year: "2026",
-    era: "Autonomous & AI Frontier",
-    title: "AI Model Weights & Decompilation Standards",
-    court: "Federal Appellate Consensus (Emerging)",
-    holding: "Analyzing public model inference APIs and weight inspection is protected under statutory reverse engineering absent affirmative contractual bypass.",
-    impact: "Defines the boundary between model extraction attacks and lawful technical validation.",
+    era: "AI & Modern Tech",
+    title: "AI Models & Software Testing",
+    court: "Federal Appeals Courts (Recent)",
+    holding: "Testing public AI outputs and inspecting model files is protected under reverse engineering rights unless you signed a contract saying you would not.",
+    impact: "Sets the ground rules separating fair technical testing from unlawful model stealing.",
     doctrineStatus: "modern",
   },
 ];
@@ -63,19 +63,28 @@ export function DoctrineTimeline() {
   const [activeIdx, setActiveIdx] = useState(2);
   const activeEvent = TIMELINE_EVENTS[activeIdx];
 
+  const statusLabel =
+    activeEvent.doctrineStatus === "foundational"
+      ? "FOUNDATIONAL CASE"
+      : activeEvent.doctrineStatus === "expansion"
+      ? "LANDMARK CASE"
+      : activeEvent.doctrineStatus === "statutory"
+      ? "WRITTEN LAW"
+      : "MODERN RULING";
+
   return (
     <div className="doctrine-timeline-wrap">
       <div className="timeline-header">
         <div>
           <h4 className="timeline-title">
-            <Clock size={16} color="var(--accent)" weight="bold" /> Doctrinal Evolution &amp; Precedent Chronology
+            <Clock size={16} color="var(--accent)" weight="bold" /> 50-Year Legal Timeline
           </h4>
           <p className="timeline-lead">
-            Tracking the 50-year arc from Common Law preemption to the 2026 Defend Trade Secrets Act framework.
+            Follow the 50-year journey of how courts have protected the right to inspect and reverse engineer products.
           </p>
         </div>
         <span className="era-badge">
-          <BookmarkSimple size={13} weight="fill" /> {TIMELINE_EVENTS.length} Historical Benchmarks
+          <BookmarkSimple size={13} weight="fill" /> {TIMELINE_EVENTS.length} Key Legal Milestones
         </span>
       </div>
 
@@ -112,18 +121,18 @@ export function DoctrineTimeline() {
             <div className="milestone-court">{activeEvent.court}</div>
           </div>
           <span className={`status-pill ${activeEvent.doctrineStatus}`}>
-            {activeEvent.doctrineStatus.toUpperCase()} PRECEDENT
+            {statusLabel}
           </span>
         </div>
 
         <div className="milestone-body">
           <div className="milestone-block">
-            <div className="block-label">Legal Holding &amp; Principle</div>
+            <div className="block-label">What the Court Decided</div>
             <div className="block-text">{activeEvent.holding}</div>
           </div>
 
           <div className="milestone-block highlight">
-            <div className="block-label">Doctrinal Impact on Modern Briefs</div>
+            <div className="block-label">Why This Matters for Your Legal Argument</div>
             <div className="block-text">{activeEvent.impact}</div>
           </div>
         </div>

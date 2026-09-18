@@ -10,9 +10,9 @@ interface NavProps {
 export function Nav({ view, onNavigate, onOpenCommandBar }: NavProps) {
   const crumb =
     view === "home"
-      ? "Autonomous Legal AI Platform"
+      ? "Smart Legal Assistant"
       : view === "agent"
-      ? "Autonomous Agent Studio"
+      ? "AI Legal Studio"
       : "Case Research Desk";
 
   return (
@@ -54,7 +54,7 @@ export function Nav({ view, onNavigate, onOpenCommandBar }: NavProps) {
             aria-current={view === "agent" ? "page" : undefined}
             onClick={() => onNavigate("agent")}
           >
-            <Sparkle size={13} weight="fill" /> AI Agent Studio
+            <Sparkle size={13} weight="fill" /> AI Legal Studio
           </button>
           <button
             type="button"
@@ -62,7 +62,7 @@ export function Nav({ view, onNavigate, onOpenCommandBar }: NavProps) {
             aria-current={view === "research" ? "page" : undefined}
             onClick={() => onNavigate("research")}
           >
-            Research Desk
+            Case Search
           </button>
         </div>
       </nav>
@@ -73,23 +73,23 @@ export function Nav({ view, onNavigate, onOpenCommandBar }: NavProps) {
             type="button"
             className="nav-cmd-k-trigger"
             onClick={onOpenCommandBar}
-            title="Global Legal Command Palette (Cmd+K / Ctrl+K)"
+            title="Quick actions and search (Press Cmd+K or Ctrl+K)"
           >
             <MagnifyingGlass size={13} />
-            <span>Command</span>
+            <span>Quick Actions</span>
             <kbd>⌘K</kbd>
           </button>
         )}
         <div className="engine-status">
           <span className="engine-dot" />
-          <span className="engine-label">CourtListener v4 Live</span>
+          <span className="engine-label">Real Court Records Live</span>
         </div>
         <a
           href="https://lexhack-2026.devpost.com/"
           target="_blank"
           rel="noreferrer"
           className="lexhack-badge"
-          title="Official LexHack 2026 Hackathon Entry"
+          title="LexHack 2026 Project Entry"
         >
           <ShieldCheck size={14} /> LexHack 2026 <ArrowSquareOut size={11} />
         </a>

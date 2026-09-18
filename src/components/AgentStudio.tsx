@@ -50,30 +50,30 @@ import type {
 const PRESET_TOPICS = [
   {
     tag: "Tech Law",
-    title: "DTSA Trade Secrets & Reverse Engineering",
+    title: "Trade Secrets & Reverse Engineering",
     prompt:
-      "We represent a technology startup accused of trade secret misappropriation under DTSA. The founder legitimately reverse-engineered public APIs. Identify controlling 9th Circuit precedents on clean-room reverse engineering, analyze opposing counsel's likely counter-arguments, and draft our defense brief.",
+      "We represent a startup accused of stealing trade secrets under the Defend Trade Secrets Act. The founder legally took apart public software code to see how it works. Find key 9th Circuit rulings that protect reverse engineering, analyze what the other side might argue, and draft our defense brief.",
     court: "ca9",
   },
   {
     tag: "Digital Rights",
-    title: "Fourth Amendment & Geofence Searches",
+    title: "Fourth Amendment & Phone Searches",
     prompt:
-      "Analyze the constitutionality of reverse keyword and geofence search warrants under the Fourth Amendment. Find recent appellate rulings invalidating dragnet digital warrants for lack of particularity, and provide distinguishing arguments against adverse law enforcement rulings.",
+      "Look at whether police can search all phones in an area under the Fourth Amendment. Find recent appeals court rulings striking down overly broad digital search warrants, and show how our case is different from cases where police won.",
     court: "ca4",
   },
   {
     tag: "AI Safety",
-    title: "AI Model Training & Copyright Fair Use",
+    title: "AI Training & Copyright Fair Use",
     prompt:
-      "Assess whether scraping publicly accessible code repositories to train generative AI code models constitutes Fair Use under 17 U.S.C. § 107. Identify persuasive precedents on transformative use (such as Google v. Oracle and Authors Guild v. Google) and pinpoint vulnerabilities regarding commercial market displacement.",
+      "Check if collecting public code to train AI counts as Fair Use under copyright law (17 U.S.C. § 107). Find strong past court decisions on fair use (like Google v. Oracle) and explain the risks if the AI hurts sales of the original work.",
     court: "ca2",
   },
   {
     tag: "Tenant Rights",
-    title: "Algorithmic Rent Fixing & Tenant Defenses",
+    title: "Rent Fixing & Tenant Rights",
     prompt:
-      "Evaluate antitrust and tenant rights claims against landlords coordinating rent prices via centralized revenue-management software. Locate recent decisions addressing algorithmic price-fixing and landlord-tenant retaliation protections.",
+      "Review tenant claims against landlords who team up to raise rents using pricing software. Find recent court rulings on illegal price-fixing by software and legal protections for tenants.",
     court: "cal",
   },
 ];
@@ -118,7 +118,7 @@ export function AgentStudio({
     return [
       {
         id: "session-1",
-        title: "DTSA Reverse Engineering Defense",
+        title: "Reverse Engineering Defense (Trade Secrets)",
         timestamp: new Date().toLocaleDateString(),
         messages: [],
         thoughts: [],
@@ -165,11 +165,11 @@ export function AgentStudio({
   const handleGenerateAnnotation = (sectionKey: string, type: "oral" | "distinguish" | "statute") => {
     let text = "";
     if (type === "oral") {
-      text = `ORAL ARGUMENT SOUNDBITE (15 SECONDS): "Your Honors, under Ninth Circuit precedent in Chicago Lock, reverse engineering is an affirmative right of lawful buyers. The plaintiff cannot turn an ordinary competitive dispute into trade secret misappropriation where disassembly was conducted openly on lawfully purchased hardware."`;
+      text = `ORAL ARGUMENT TALKING POINT (15 SECONDS): "Your Honors, under Ninth Circuit court rulings like Chicago Lock, anyone who buys a product legally has the right to take it apart to see how it works. The other side cannot turn healthy business competition into stolen secrets when our team acted honestly and bought the item fair and square."`;
     } else if (type === "distinguish") {
-      text = `DISTINGUISHING FOOTNOTE: Hostile citations such as Comet Technologies (2026) are inapposite because the defendant in Comet had executed an explicit non-analysis covenant prior to receiving the unreleased prototype. Here, our acquisition was through standard third-party commercial vendors without contractual encumbrance.`;
+      text = `HOW THIS DIFFERS FROM OPPOSING CASES: Cases against us like Comet Technologies (2026) do not apply here. In that case, the company signed a strict agreement promising never to inspect the secret prototype. In our case, we bought the product normally from open sellers without signing any special restriction.`;
     } else {
-      text = `STATUTORY AUTHORITY: 18 U.S.C. § 1836(b)(3)(B) specifically restricts injunctive relief that would 'prevent a person from entering into an employment relationship' and incorporates the common-law privilege of independent discovery.`;
+      text = `WRITTEN LAW: 18 U.S.C. § 1836(b)(3)(B) clearly stops courts from blocking someone from taking a new job, and it protects anyone who figures out the information on their own.`;
     }
     setMemoAnnotations((prev) => ({
       ...prev,
@@ -276,7 +276,7 @@ export function AgentStudio({
     setInputPrompt("");
     setRunning(true);
     setPaused(false);
-    setCurrentPhase("Initializing ReAct loop...");
+    setCurrentPhase("Starting legal research...");
 
     const userMessage: AgentChatMessage = {
       id: `msg-${Date.now()}`,
@@ -307,7 +307,7 @@ export function AgentStudio({
         signal: ac.signal,
         onEvent: (event) => {
           if (event.type === "start") {
-            setCurrentPhase("Analyzing legal issue & CourtListener indices...");
+            setCurrentPhase("Checking court records on CourtListener...");
           } else if (event.type === "thought") {
             const thought = event.data;
             setCurrentPhase(thought.title);
@@ -317,7 +317,7 @@ export function AgentStudio({
             }));
           } else if (event.type === "action") {
             const action = event.data;
-            setCurrentPhase(`Tool: ${action.tool}`);
+            setCurrentPhase(`Searching: ${action.tool}`);
             updateActiveSession((prev) => ({
               ...prev,
               actions: [...prev.actions, { ...action, id: `action-${Date.now()}-${Math.random()}` }],
@@ -358,7 +358,7 @@ export function AgentStudio({
               messages: [...prev.messages, assistantMessage],
             }));
           } else if (event.type === "completed") {
-            setCurrentPhase("Research cycle completed");
+            setCurrentPhase("Research finished");
             updateActiveSession((prev) => ({
               ...prev,
               cases: event.data.cases || prev.cases,
@@ -367,11 +367,11 @@ export function AgentStudio({
               memo: event.data.memo || prev.memo,
             }));
           } else if (event.type === "error") {
-            setCurrentPhase("Error encountered");
+            setCurrentPhase("Something went wrong");
             const errorMessage: AgentChatMessage = {
               id: `msg-${Date.now()}`,
               role: "system",
-              content: `⚠️ Agent Error: ${event.data.message}`,
+              content: `⚠️ Something went wrong: ${event.data.message}`,
               timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             };
             updateActiveSession((prev) => ({
@@ -384,7 +384,7 @@ export function AgentStudio({
     } catch (err: unknown) {
       if ((err as Error).name !== "AbortError") {
         const errStr = (err as Error).message || "Connection terminated.";
-        setCurrentPhase("Execution failed");
+        setCurrentPhase("Connection lost");
         updateActiveSession((prev) => ({
           ...prev,
           messages: [
@@ -392,7 +392,7 @@ export function AgentStudio({
             {
               id: `msg-${Date.now()}`,
               role: "system",
-              content: `⚠️ Connection Error: ${errStr}`,
+              content: `⚠️ Connection lost: ${errStr}`,
               timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             },
           ],
@@ -400,24 +400,24 @@ export function AgentStudio({
       }
     } finally {
       setRunning(false);
-      setCurrentPhase("Ready for follow-up");
+      setCurrentPhase("Ready for your next question");
     }
   }
 
   function handlePauseResume() {
     if (paused) {
       setPaused(false);
-      setCurrentPhase("Resumed execution");
+      setCurrentPhase("Resumed research");
     } else {
       setPaused(true);
-      setCurrentPhase("Paused by user");
+      setCurrentPhase("Paused");
     }
   }
 
   function handleStop() {
     abortControllerRef.current?.abort();
     setRunning(false);
-    setCurrentPhase("Execution stopped");
+    setCurrentPhase("Research stopped");
   }
 
   function handleSaveApiKey() {
@@ -429,7 +429,7 @@ export function AgentStudio({
   function copyMemoMarkdown() {
     if (!activeSession.memo) return;
     const m = activeSession.memo;
-    const text = `# ${m.title}\n\n## Executive Summary\n${m.executiveSummary}\n\n## Issue\n${m.issue}\n\n## Controlling Rule\n${m.rule}\n\n## Application & Analysis\n${m.application}\n\n## Opposing Arguments & Distinctions\n${m.counterArguments}\n\n## Conclusion & Actionable Advice\n${m.conclusion}`;
+    const text = `# ${m.title}\n\n## Quick Overview (Executive Summary)\n${m.executiveSummary}\n\n## The Legal Question\n${m.issue}\n\n## The Main Rules of Law\n${m.rule}\n\n## Applying the Law to Your Facts\n${m.application}\n\n## Answers to the Other Side's Arguments\n${m.counterArguments}\n\n## Final Conclusion & Next Steps\n${m.conclusion}`;
     navigator.clipboard.writeText(text);
     setCopySuccess(true);
     setTimeout(() => setCopySuccess(false), 2000);
@@ -463,13 +463,13 @@ export function AgentStudio({
             className="modal settings-modal"
             role="dialog"
             aria-modal="true"
-            aria-label="API and intelligence settings"
+            aria-label="API and AI model settings"
             tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-head">
               <h2>
-                <Key size={18} /> API & Intelligence Settings
+                <Key size={18} /> API & AI Model Settings
               </h2>
               <button
                 type="button"
@@ -481,8 +481,8 @@ export function AgentStudio({
             </div>
             <div className="modal-body">
               <p className="settings-desc">
-                CaseFile AI connects to CourtListener's public legal index and Google Gemini 2.0.
-                You can provide your own personal Gemini API key below (stored safely in your browser's local storage):
+                CaseFile AI connects to CourtListener's public court record database and Google Gemini 2.0.
+                You can enter your own free Gemini API key below. It stays safely saved only inside your browser:
               </p>
               <div className="form-group">
                 <label htmlFor="gemini-key-input">Google Gemini API Key</label>
@@ -588,10 +588,10 @@ export function AgentStudio({
                 type="button"
                 className="btn btn-secondary btn-sm command-trigger-btn"
                 onClick={onOpenCommandPalette || (() => setCommandPaletteOpen(true))}
-                title="Open Legal Command Palette (Cmd+K / Ctrl+K)"
+                title="Open Quick Actions (Cmd+K / Ctrl+K)"
               >
                 <MagnifyingGlass size={13} />
-                <span className="btn-label-desktop">Command</span>
+                <span className="btn-label-desktop">Commands</span>
                 <kbd className="cmd-k-kbd">⌘K</kbd>
               </button>
 
@@ -599,7 +599,7 @@ export function AgentStudio({
                 type="button"
                 className="btn btn-secondary btn-sm settings-toggle"
                 onClick={() => setSettingsOpen(true)}
-                title="Configure API Keys"
+                title="Set Your API Key"
               >
                 <Key size={14} />
                 {getStoredGeminiKey() ? "Custom Key Active" : "Set API Key"}
@@ -611,7 +611,7 @@ export function AgentStudio({
           {activeSession.messages.length === 0 && (
             <div className="presets-wrapper">
               <div className="presets-label">
-                <Sparkle size={14} weight="fill" /> Recommended LexHack 2026 Scenarios
+                <Sparkle size={14} weight="fill" /> Recommended Legal Research Scenarios
               </div>
               <div className="preset-grid">
                 {PRESET_TOPICS.map((preset) => (
@@ -639,7 +639,7 @@ export function AgentStudio({
               <div key={msg.id} className={`chat-bubble ${msg.role}`}>
                 <div className="bubble-header">
                   <span className="bubble-author">
-                    {msg.role === "user" ? "Counsel / Researcher" : "CaseFile AI Agent"}
+                    {msg.role === "user" ? "You" : "CaseFile Assistant"}
                   </span>
                   <span className="bubble-time">{msg.timestamp}</span>
                 </div>
@@ -647,7 +647,7 @@ export function AgentStudio({
                 {msg.casesCount !== undefined && msg.casesCount > 0 && (
                   <div className="bubble-meta">
                     <span className="chip ok">
-                      <CheckCircle size={12} /> {msg.casesCount} Opinions Analyzed
+                      <CheckCircle size={12} /> {msg.casesCount} Court Decisions Read
                     </span>
                   </div>
                 )}
@@ -712,13 +712,13 @@ export function AgentStudio({
           <div className="studio-input-bar">
             {running && (
               <div className="steering-banner">
-                <span>Agent researching live on CourtListener...</span>
+                <span>Researching live court records on CourtListener...</span>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={handleStop}
                 >
-                  Stop Cycle
+                  Stop Research
                 </button>
               </div>
             )}
@@ -732,11 +732,11 @@ export function AgentStudio({
             >
               <div className="form-row">
                 <label htmlFor="agent-prompt" className="sr-only">
-                  Legal inquiry or follow-up prompt
+                  Ask a legal question or give instructions
                 </label>
                 <textarea
                   id="agent-prompt"
-                  aria-label="Legal inquiry or follow-up prompt"
+                  aria-label="Ask a legal question or give instructions"
                   value={inputPrompt}
                   onChange={(e) => setInputPrompt(e.target.value)}
                   onKeyDown={(e) => {
@@ -745,7 +745,7 @@ export function AgentStudio({
                       void handleSend();
                     }
                   }}
-                  placeholder="Enter a legal inquiry, factual dispute, or follow-up prompt..."
+                  placeholder="Ask any legal question, describe your situation, or give next steps..."
                   rows={2}
                   disabled={running}
                 />
@@ -760,12 +760,12 @@ export function AgentStudio({
 
               <div className="input-toolbar">
                 <div className="circuit-chips">
-                  <span className="circuit-label">Jurisdiction:</span>
+                  <span className="circuit-label">Court:</span>
                   {[
                     { label: "All Courts", val: "" },
-                    { label: "SCOTUS", val: "scotus" },
-                    { label: "9th Cir", val: "ca9" },
-                    { label: "2nd Cir", val: "ca2" },
+                    { label: "Supreme Court", val: "scotus" },
+                    { label: "9th Circuit", val: "ca9" },
+                    { label: "2nd Circuit", val: "ca2" },
                     { label: "California", val: "cal" },
                   ].map((c) => (
                     <button
@@ -781,7 +781,7 @@ export function AgentStudio({
                 </div>
 
                 <div className="input-hints">
-                  <span>Shift + Enter for newline</span>
+                  <span>Press Shift + Enter for a new line</span>
                 </div>
               </div>
             </form>
@@ -799,9 +799,9 @@ export function AgentStudio({
                 aria-selected={activeCanvasTab === "matrix"}
                 className={`canvas-tab ${activeCanvasTab === "matrix" ? "active" : ""}`}
                 onClick={() => setActiveCanvasTab("matrix")}
-                title="Affirmative vs Adverse Case Matrix"
+                title="See helpful cases compared against opposing cases"
               >
-                <Scales size={15} /> Matrix
+                <Scales size={15} /> Case Table
                 <span className="tab-count">
                   {activeSession.matrix.favorable.length + activeSession.matrix.adverse.length}
                 </span>
@@ -813,9 +813,9 @@ export function AgentStudio({
                 aria-selected={activeCanvasTab === "graph"}
                 className={`canvas-tab ${activeCanvasTab === "graph" ? "active" : ""}`}
                 onClick={() => setActiveCanvasTab("graph")}
-                title="Interactive Citation & Precedent Topology Network"
+                title="Visual map connecting related court cases"
               >
-                <CirclesThreePlus size={15} weight="bold" /> Precedent Graph
+                <CirclesThreePlus size={15} weight="bold" /> Case Map
               </button>
 
               <button
@@ -824,9 +824,9 @@ export function AgentStudio({
                 aria-selected={activeCanvasTab === "split"}
                 className={`canvas-tab ${activeCanvasTab === "split" ? "active" : ""}`}
                 onClick={() => setActiveCanvasTab("split")}
-                title="13 Federal Circuits Split Matrix"
+                title="Compare how different federal appeals courts rule"
               >
-                <GitBranch size={15} /> Circuit Splits
+                <GitBranch size={15} /> Court Disagreements
               </button>
 
               <button
@@ -835,9 +835,9 @@ export function AgentStudio({
                 aria-selected={activeCanvasTab === "timeline"}
                 className={`canvas-tab ${activeCanvasTab === "timeline" ? "active" : ""}`}
                 onClick={() => setActiveCanvasTab("timeline")}
-                title="50-Year Legal Doctrine Chronology"
+                title="50-year history of how this legal rule developed"
               >
-                <Clock size={15} /> Timeline
+                <Clock size={15} /> Legal Timeline
               </button>
 
               <button
@@ -846,9 +846,9 @@ export function AgentStudio({
                 aria-selected={activeCanvasTab === "memo"}
                 className={`canvas-tab ${activeCanvasTab === "memo" ? "active" : ""}`}
                 onClick={() => setActiveCanvasTab("memo")}
-                title="Formal Court Pleading Paper Brief"
+                title="Formal legal memo formatted with Issue, Rule, Facts, and Answer"
               >
-                <FileText size={15} /> IRAC Brief
+                <FileText size={15} /> Legal Memo (IRAC)
                 {activeSession.memo && <span className="tab-badge">Ready</span>}
               </button>
 
@@ -858,9 +858,9 @@ export function AgentStudio({
                 aria-selected={activeCanvasTab === "citations"}
                 className={`canvas-tab ${activeCanvasTab === "citations" ? "active" : ""}`}
                 onClick={() => setActiveCanvasTab("citations")}
-                title="Official CourtListener Docket Audit"
+                title="Official check against real court records"
               >
-                <ShieldCheck size={15} /> Citations
+                <ShieldCheck size={15} /> Verified Sources
                 <span className="tab-count">{activeSession.citations.length}</span>
               </button>
 
@@ -876,9 +876,9 @@ export function AgentStudio({
                     }
                     setActiveCanvasTab("reader");
                   }}
-                  title="Raw Judicial Opinion Text"
+                  title="Read the actual words written by the judge"
                 >
-                  <Books size={15} /> Opinion Reader
+                  <Books size={15} /> Full Decision
                 </button>
               )}
             </div>
@@ -889,9 +889,9 @@ export function AgentStudio({
                 className="btn btn-secondary btn-sm"
                 onClick={copyMemoMarkdown}
                 disabled={!activeSession.memo}
-                title="Copy Memorandum as Markdown"
+                title="Copy Memorandum as Text"
               >
-                <Copy size={14} /> {copySuccess ? "Copied" : "Copy MD"}
+                <Copy size={14} /> {copySuccess ? "Copied" : "Copy Text"}
               </button>
               <button
                 type="button"
@@ -907,9 +907,9 @@ export function AgentStudio({
                 className="btn btn-secondary btn-sm"
                 onClick={handleDownloadJson}
                 disabled={activeSession.messages.length === 0}
-                title="Download JSON Research Payload"
+                title="Download JSON Research Data"
               >
-                <DownloadSimple size={14} /> JSON
+                <DownloadSimple size={14} /> Export Data
               </button>
             </div>
           </div>
@@ -924,16 +924,16 @@ export function AgentStudio({
                   <div className="matrix-column favorable">
                     <div className="column-head">
                       <h3>
-                        <CheckCircle size={16} color="var(--accent)" weight="bold" /> Favorable Precedent
+                        <CheckCircle size={16} color="var(--accent)" weight="bold" /> Cases That Support You
                       </h3>
                       <span className="count-tag">
-                        {activeSession.matrix.favorable.length} authorities
+                        {activeSession.matrix.favorable.length} helpful cases
                       </span>
                     </div>
                     {activeSession.matrix.favorable.length === 0 ? (
                       <div className="matrix-empty">
                         <Scales size={32} />
-                        <p>No favorable precedents loaded yet. Run a prompt to initiate research.</p>
+                        <p>No supporting cases yet. Ask a legal question to start researching.</p>
                       </div>
                     ) : (
                       <div className="matrix-cards">
@@ -944,11 +944,11 @@ export function AgentStudio({
                               <span className="citation-badge">{item.citation}</span>
                             </div>
                             <div className="card-section">
-                              <div className="section-label">Key Favorable Holding:</div>
+                              <div className="section-label">What The Judge Ruled (Why It Helps):</div>
                               <div className="section-text">{item.holding}</div>
                             </div>
                             <div className="card-section">
-                              <div className="section-label">Strategic Application:</div>
+                              <div className="section-label">How To Use This In Your Argument:</div>
                               <div className="section-strategy">{item.strategicValue}</div>
                             </div>
                             {item.link && (
@@ -959,7 +959,7 @@ export function AgentStudio({
                                   rel="noreferrer"
                                   className="courtlistener-link"
                                 >
-                                  CourtListener Record <ArrowSquareOut size={12} />
+                                  View Court Record <ArrowSquareOut size={12} />
                                 </a>
                               </div>
                             )}
@@ -973,16 +973,16 @@ export function AgentStudio({
                   <div className="matrix-column adverse">
                     <div className="column-head">
                       <h3>
-                        <ShieldWarning size={16} color="var(--warn)" weight="bold" /> Adverse Authority (Opposing Counsel)
+                        <ShieldWarning size={16} color="var(--warn)" weight="bold" /> Opposing Cases (The Other Side)
                       </h3>
                       <span className="count-tag">
-                        {activeSession.matrix.adverse.length} authorities
+                        {activeSession.matrix.adverse.length} opposing cases
                       </span>
                     </div>
                     {activeSession.matrix.adverse.length === 0 ? (
                       <div className="matrix-empty">
                         <ShieldWarning size={32} />
-                        <p>Adverse counter-arguments will populate here as the agent researches.</p>
+                        <p>Arguments the other side might make will show up here as the assistant researches.</p>
                       </div>
                     ) : (
                       <div className="matrix-cards">
@@ -993,11 +993,11 @@ export function AgentStudio({
                               <span className="citation-badge">{item.citation}</span>
                             </div>
                             <div className="card-section">
-                              <div className="section-label">Anticipated Opposing Argument:</div>
+                              <div className="section-label">What The Other Side Will Claim:</div>
                               <div className="section-text">{item.opposingArgument}</div>
                             </div>
                             <div className="card-section highlight-distinguish">
-                              <div className="section-label">Distinguishing Strategy:</div>
+                              <div className="section-label">How To Answer Their Argument:</div>
                               <div className="section-strategy">{item.distinguishingStrategy}</div>
                             </div>
                             {item.link && (
@@ -1008,7 +1008,7 @@ export function AgentStudio({
                                   rel="noreferrer"
                                   className="courtlistener-link"
                                 >
-                                  CourtListener Record <ArrowSquareOut size={12} />
+                                  View Court Record <ArrowSquareOut size={12} />
                                 </a>
                               </div>
                             )}
@@ -1052,8 +1052,8 @@ export function AgentStudio({
                 {!activeSession.memo ? (
                   <div className="memo-empty">
                     <FileText size={42} />
-                    <h3>No Legal Memorandum Generated Yet</h3>
-                    <p>Enter a legal objective in the assistant stream to autonomously synthesize an IRAC brief.</p>
+                    <h3>No Legal Memo Created Yet</h3>
+                    <p>Ask a question in the chat box on the left, and the assistant will write a complete legal memo for you.</p>
                   </div>
                 ) : (
                   <article className="memo-document">
@@ -1072,32 +1072,32 @@ export function AgentStudio({
                         <h1 className="memo-title">{activeSession.memo.title}</h1>
                         <div className="memo-meta-grid">
                           <div><strong>DATE:</strong> {new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}</div>
-                          <div><strong>COUNSEL:</strong> Autonomous Strategy Agent</div>
-                          <div><strong>CIRCUIT / VENUE:</strong> {selectedCourt ? selectedCourt.toUpperCase() : "Governing Federal Jurisdiction"}</div>
-                          <div><strong>INTEGRITY:</strong> CourtListener v4 Docket Audited</div>
+                          <div><strong>AUTHOR:</strong> CaseFile Research Assistant</div>
+                          <div><strong>COURT:</strong> {selectedCourt ? selectedCourt.toUpperCase() : "Federal Appeals Court"}</div>
+                          <div><strong>SOURCES:</strong> Checked Against Real Court Records</div>
                         </div>
                       </header>
 
                       {/* Section 1: Executive Summary */}
                       <section className="memo-section">
                         <div className="section-head-bar">
-                          <h2 className="section-heading">I. EXECUTIVE SUMMARY</h2>
+                          <h2 className="section-heading">I. QUICK OVERVIEW (SUMMARY)</h2>
                           <div className="co-counsel-pills">
                             <button
                               type="button"
                               className="co-counsel-pill"
                               onClick={() => handleGenerateAnnotation("summary", "oral")}
-                              title="Generate Oral Argument Pitch"
+                              title="Generate 15-Second Talking Point"
                             >
-                              <Lightning size={12} weight="fill" /> Oral Pitch
+                              <Lightning size={12} weight="fill" /> 15-Sec Talking Point
                             </button>
                             <button
                               type="button"
                               className="co-counsel-pill"
                               onClick={() => handleGenerateAnnotation("summary", "statute")}
-                              title="Link Statutory Grounding"
+                              title="Link Written Law"
                             >
-                              <Scales size={12} weight="fill" /> Statutory Link
+                              <Scales size={12} weight="fill" /> Key Law
                             </button>
                           </div>
                         </div>
@@ -1107,8 +1107,8 @@ export function AgentStudio({
                             <div className="callout-head">
                               <span className="callout-tag">
                                 {memoAnnotations["summary"].type === "oral"
-                                  ? "⚡ Oral Argument Panel Soundbite (15s)"
-                                  : "⚖️ Statutory Grounding"}
+                                  ? "⚡ 15-Second Talking Point for the Judges"
+                                  : "⚖️ Written Law (Statute)"}
                               </span>
                               <button
                                 type="button"
@@ -1130,7 +1130,7 @@ export function AgentStudio({
                       {/* Section 2: Statement of Issue */}
                       <section className="memo-section">
                         <div className="section-head-bar">
-                          <h2 className="section-heading">II. STATEMENT OF THE ISSUE</h2>
+                          <h2 className="section-heading">II. THE LEGAL QUESTION</h2>
                         </div>
                         <div className="section-prose">{activeSession.memo.issue}</div>
                       </section>
@@ -1138,7 +1138,7 @@ export function AgentStudio({
                       {/* Section 3: Controlling Legal Rules */}
                       <section className="memo-section">
                         <div className="section-head-bar">
-                          <h2 className="section-heading">III. CONTROLLING LEGAL RULES</h2>
+                          <h2 className="section-heading">III. THE MAIN RULES OF LAW</h2>
                           <div className="co-counsel-pills">
                             <button
                               type="button"
@@ -1153,7 +1153,7 @@ export function AgentStudio({
                         {memoAnnotations["rule"] && (
                           <aside className="annotation-callout statute">
                             <div className="callout-head">
-                              <span className="callout-tag">⚖️ Statutory Authority</span>
+                              <span className="callout-tag">⚖️ Written Law (Statute)</span>
                               <button
                                 type="button"
                                 className="callout-dismiss"
@@ -1174,14 +1174,14 @@ export function AgentStudio({
                       {/* Section 4: Application */}
                       <section className="memo-section">
                         <div className="section-head-bar">
-                          <h2 className="section-heading">IV. APPLICATION &amp; LEGAL ANALYSIS</h2>
+                          <h2 className="section-heading">IV. APPLYING THE LAW TO YOUR FACTS</h2>
                           <div className="co-counsel-pills">
                             <button
                               type="button"
                               className="co-counsel-pill"
                               onClick={() => handleGenerateAnnotation("app", "oral")}
                             >
-                              <Lightning size={12} weight="fill" /> Panel Question Prep
+                              <Lightning size={12} weight="fill" /> Judge's Question Prep
                             </button>
                           </div>
                         </div>
@@ -1189,7 +1189,7 @@ export function AgentStudio({
                         {memoAnnotations["app"] && (
                           <aside className="annotation-callout oral">
                             <div className="callout-head">
-                              <span className="callout-tag">⚡ Panel Rebuttal Formulation</span>
+                              <span className="callout-tag">⚡ How to Answer the Judge's Question</span>
                               <button
                                 type="button"
                                 className="callout-dismiss"
@@ -1210,14 +1210,14 @@ export function AgentStudio({
                       {/* Section 5: Counter-arguments & Rebuttal */}
                       <section className="memo-section">
                         <div className="section-head-bar">
-                          <h2 className="section-heading">V. OPPOSING ARGUMENTS &amp; REBUTTAL STRATEGY</h2>
+                          <h2 className="section-heading">V. ANSWERS TO THE OTHER SIDE'S ARGUMENTS</h2>
                           <div className="co-counsel-pills">
                             <button
                               type="button"
                               className="co-counsel-pill"
                               onClick={() => handleGenerateAnnotation("counter", "distinguish")}
                             >
-                              <ShieldWarning size={12} weight="fill" /> Distinguishing Footnote
+                              <ShieldWarning size={12} weight="fill" /> How Our Case Differs
                             </button>
                           </div>
                         </div>
@@ -1225,7 +1225,7 @@ export function AgentStudio({
                         {memoAnnotations["counter"] && (
                           <aside className="annotation-callout distinguish">
                             <div className="callout-head">
-                              <span className="callout-tag">🛡️ Tactical Distinguishing Argument</span>
+                              <span className="callout-tag">🛡️ Why the Other Side's Cases Do Not Apply</span>
                               <button
                                 type="button"
                                 className="callout-dismiss"
@@ -1246,7 +1246,7 @@ export function AgentStudio({
                       {/* Section 6: Conclusion */}
                       <section className="memo-section">
                         <div className="section-head-bar">
-                          <h2 className="section-heading">VI. CONCLUSION &amp; LITIGATION RECOMMENDATIONS</h2>
+                          <h2 className="section-heading">VI. CONCLUSION &amp; WHAT TO DO NEXT</h2>
                         </div>
                         <div className="section-prose">{activeSession.memo.conclusion}</div>
                       </section>
@@ -1261,18 +1261,18 @@ export function AgentStudio({
               <div className="citations-view">
                 <div className="citations-intro">
                   <div className="intro-title">
-                    <ShieldCheck size={20} color="var(--accent)" weight="bold" /> Anti-Hallucination Citation Audit
+                    <ShieldCheck size={20} color="var(--accent)" weight="bold" /> Fact-Checked Court Citations
                   </div>
                   <p>
-                    Every legal precedent analyzed by CaseFile AI is cross-verified against real court dockets on CourtListener.
-                    Unverified or fabricated citations are flagged to maintain strict legal ethics.
+                    Every court case found by CaseFile AI is checked directly against official court records on CourtListener.
+                    Fake or unverified case citations are flagged immediately so you can trust every single source.
                   </p>
                 </div>
 
                 {activeSession.citations.length === 0 ? (
                   <div className="citations-empty">
                     <ShieldCheck size={36} />
-                    <p>No citations verified yet. Run research to audit case references.</p>
+                    <p>No case sources checked yet. Ask a legal question to research real court records.</p>
                   </div>
                 ) : (
                   <div className="citations-grid">
@@ -1281,17 +1281,17 @@ export function AgentStudio({
                         <div className="cite-badge-row">
                           {cite.status === "verified" && (
                             <span className="guardrail-badge verified">
-                              🟢 Verified Official Authority
+                              🟢 Verified Official Court Record
                             </span>
                           )}
                           {cite.status === "partial" && (
                             <span className="guardrail-badge partial">
-                              🟡 Partial / Unindexed Match
+                              🟡 Partial Match / Needs Review
                             </span>
                           )}
                           {cite.status === "unverified" && (
                             <span className="guardrail-badge flagged">
-                              🔴 Unverified Authority
+                              🔴 Unverified / Not Found in Court Records
                             </span>
                           )}
                           <span className="cite-court">{cite.court}</span>
@@ -1309,7 +1309,7 @@ export function AgentStudio({
                               rel="noreferrer"
                               className="cite-link"
                             >
-                              View Official Record <ArrowSquareOut size={12} />
+                              View Court Record <ArrowSquareOut size={12} />
                             </a>
                           )}
                         </div>
@@ -1328,14 +1328,14 @@ export function AgentStudio({
                   return (
                     <div className="opinion-reader-empty">
                       <Books size={40} color="var(--accent)" />
-                      <h4>No Opinion Selected for Deep Reading</h4>
+                      <h4>No Court Decision Selected Yet</h4>
                       <p>
-                        Launch an autonomous research inquiry or click any precedent in the Precedent Graph or Adversarial Matrix to load full judicial opinion text and docket context.
+                        Ask a legal question or click on any case in the Case Table or Case Map to read the full decision written by the judge.
                       </p>
                     </div>
                   );
                 }
-                const caseTitle = cur.Title || (cur as unknown as { title?: string }).title || "Untitled Authority";
+                const caseTitle = cur.Title || (cur as unknown as { title?: string }).title || "Untitled Case";
                 const caseLink = cur.Link || (cur as unknown as { link?: string }).link;
                 return (
                   <div className="reader-view">
@@ -1361,7 +1361,7 @@ export function AgentStudio({
                     </div>
                     <div className="reader-body">
                       <pre className="opinion-text">
-                        {cur.opinionText || cur.snippet || "No opinion text available."}
+                        {cur.opinionText || cur.snippet || "No decision text found for this case."}
                       </pre>
                     </div>
                   </div>

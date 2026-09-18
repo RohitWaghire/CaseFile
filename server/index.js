@@ -48,14 +48,14 @@ const apiLimiter = rateLimit({
   max: Number(process.env.RATE_LIMIT_API) || 120,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many requests. Please slow down." },
+  message: { error: "Too many searches at once. Please wait a moment and try again." },
 });
 const costlyLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: Number(process.env.RATE_LIMIT_COSTLY) || 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Hourly limit reached for extract/enrich. Try again later." },
+  message: { error: "Hourly limit reached for text extraction and summaries. Please try again in a little while." },
 });
 
 // Access gate + baseline limiter applied to the whole API surface.
@@ -63,7 +63,7 @@ app.use("/api", apiLimiter, (req, res, next) => {
   if (!ACCESS_PASSWORD || req.path === "/health") return next();
   const provided = req.get("x-access-password") || req.query.access;
   if (provided === ACCESS_PASSWORD) return next();
-  return res.status(401).json({ error: "Access password required." });
+  return res.status(401).json({ error: "Password required to access this tool." });
 });
 
 function clHeaders(extra = {}) {
@@ -481,7 +481,7 @@ app.get("/api/search", async (req, res) => {
   try {
     const q = String(req.query.q || "").trim();
     if (!q) {
-      return res.status(400).json({ error: "Query parameter q is required." });
+      return res.status(400).json({ error: "Please enter a search query." });
     }
 
     const pageSize = Math.min(Math.max(parseInt(req.query.page_size, 10) || 15, 1), 30);
@@ -503,7 +503,7 @@ app.get("/api/search", async (req, res) => {
     if (!clRes.ok) {
       const body = await clRes.text();
       return res.status(clRes.status).json({
-        error: "CourtListener search failed",
+        error: "Court case search failed",
         detail: body.slice(0, 500),
       });
     }
@@ -534,7 +534,7 @@ app.post("/api/extract", costlyLimiter, async (req, res) => {
   try {
     const cases = Array.isArray(req.body?.cases) ? req.body.cases : [];
     if (!cases.length) {
-      return res.status(400).json({ error: "Body must include cases: []" });
+      return res.status(400).json({ error: "Please choose at least one case." });
     }
 
     // Cap how many opinions we scrape per call to bound cost/latency. The default
@@ -572,7 +572,7 @@ app.post("/api/extract", costlyLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Extract failed", detail: String(err.message || err) });
+    res.status(500).json({ error: "Could not get full text", detail: String(err.message || err) });
   }
 });
 
@@ -580,14 +580,14 @@ app.post("/api/enrich", costlyLimiter, async (req, res) => {
   try {
     const cases = Array.isArray(req.body?.cases) ? req.body.cases : [];
     if (!cases.length) {
-      return res.status(400).json({ error: "Body must include cases: []" });
+      return res.status(400).json({ error: "Please choose at least one case." });
     }
     if (!GEMINI_KEY) {
       return res.json({
         count: 0,
         cases: [],
         mode: "disabled",
-        detail: "Set GOOGLE_GEMINI_KEY to enable LLM enrichment.",
+        detail: "Add a Google AI key to turn on AI summaries.",
       });
     }
 
@@ -603,7 +603,7 @@ app.post("/api/enrich", costlyLimiter, async (req, res) => {
     res.json({ count: enriched.length, cases: enriched, mode: "gemini", model: GEMINI_MODEL });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Enrich failed", detail: String(err.message || err) });
+    res.status(500).json({ error: "Could not create AI summaries", detail: String(err.message || err) });
   }
 });
 
@@ -630,7 +630,7 @@ app.get("/api/case/:id", costlyLimiter, async (req, res) => {
       extracted: full.extracted,
     });
   } catch (err) {
-    res.status(500).json({ error: "Case fetch failed", detail: String(err.message || err) });
+    res.status(500).json({ error: "Could not open court case", detail: String(err.message || err) });
   }
 });
 
@@ -646,7 +646,7 @@ app.post("/api/agent/chat", async (req, res) => {
   } catch (err) {
     console.error("[agent] Unhandled chat stream error:", err);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Agent execution failed", detail: err.message });
+      res.status(500).json({ error: "AI assistant ran into an issue", detail: err.message });
     }
   }
 });

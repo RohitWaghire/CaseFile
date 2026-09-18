@@ -23,7 +23,7 @@ export function ImageScaleFade({ src, alt, caption }: ImageScaleFadeProps) {
     const ctx = gsap.context(() => {
       gsap.fromTo(
         img,
-        { scale: 0.82, opacity: 0.55 },
+        { scale: 0.9, opacity: 0.7 },
         {
           scale: 1,
           opacity: 1,
@@ -36,16 +36,6 @@ export function ImageScaleFade({ src, alt, caption }: ImageScaleFadeProps) {
           },
         }
       );
-      gsap.to(img, {
-        opacity: 0.28,
-        ease: "none",
-        scrollTrigger: {
-          trigger: wrap.current,
-          start: "center center",
-          end: "bottom top",
-          scrub: 1,
-        },
-      });
     }, wrap);
 
     return () => ctx.revert();

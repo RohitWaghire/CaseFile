@@ -31,11 +31,11 @@ interface ResearchProps {
 }
 
 const JURISDICTION_CHIPS = [
-  { id: "", label: "All Jurisdictions" },
-  { id: "scotus", label: "SCOTUS" },
-  { id: "ca9", label: "9th Cir. (Tech/IP)" },
-  { id: "ca2", label: "2nd Cir. (NY/Finance)" },
-  { id: "cal", label: "California Supreme" },
+  { id: "", label: "All Courts" },
+  { id: "scotus", label: "Supreme Court" },
+  { id: "ca9", label: "9th Circuit (Tech & IP)" },
+  { id: "ca2", label: "2nd Circuit (NY & Business)" },
+  { id: "cal", label: "California Supreme Court" },
 ];
 
 export function Research({ initialQuery, onStartAgent }: ResearchProps) {
@@ -49,7 +49,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
   const [enriching, setEnriching] = useState(false);
   const [extractProgress, setExtractProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState("Connected to CourtListener v4 Public Index");
+  const [status, setStatus] = useState("Connected to CourtListener Court Records");
   const [jsonOpen, setJsonOpen] = useState(false);
   const [copiedCite, setCopiedCite] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
@@ -76,7 +76,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
 
     setLoading(true);
     setError(null);
-    setStatus(`Searching CourtListener dockets for "${trimmed}"...`);
+    setStatus(`Searching court records for "${trimmed}"...`);
     setExtractProgress(0);
 
     try {
@@ -90,13 +90,13 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
       setSelectedId(data.results[0]?.Id ?? null);
       setStatus(
         data.count
-          ? `${data.count.toLocaleString()} published opinions indexed • Showing top ${data.results.length}`
-          : "No published judicial opinions matched this inquiry."
+          ? `${data.count.toLocaleString()} court decisions found • Showing top ${data.results.length}`
+          : "No court decisions matched your search."
       );
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
       setError((err as Error).message || "Search failed");
-      setStatus("CourtListener search request failed");
+      setStatus("Search failed. Please try again.");
       setResults([]);
       setSelectedId(null);
       setTotal(0);
@@ -170,7 +170,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
     setExtracting(true);
     setError(null);
     setExtractProgress(0.15);
-    setStatus("Extracting authentic opinion text from CourtListener...");
+    setStatus("Downloading full decision text from CourtListener...");
 
     const tick = window.setInterval(() => {
       setExtractProgress((p) => Math.min(0.92, p + 0.08));
@@ -193,10 +193,10 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
           };
         })
       );
-      setStatus(`Successfully extracted full opinion text for ${data.count} case${data.count === 1 ? "" : "s"}.`);
+      setStatus(`Loaded full text for ${data.count} case${data.count === 1 ? "" : "s"}.`);
     } catch (err) {
       setError((err as Error).message || "Extract failed");
-      setStatus("Extract failed");
+      setStatus("Could not load full text. Please try again.");
     } finally {
       window.clearInterval(tick);
       setExtracting(false);
@@ -208,12 +208,12 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
     if (!results.length || enriching || extracting) return;
     setEnriching(true);
     setError(null);
-    setStatus("Synthesizing judicial summaries and procedural postures via Gemini 2.0...");
+    setStatus("Writing AI case summaries and key takeaways with Gemini 2.0...");
 
     try {
       const data = await enrichCases(results);
       if (data.mode === "disabled") {
-        setStatus(data.detail || "LLM enrichment is not configured on the server.");
+        setStatus(data.detail || "AI summaries are not configured on the server.");
         return;
       }
 
@@ -234,10 +234,10 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
         })
       );
       const done = data.cases.filter((c) => c.enriched).length;
-      setStatus(`Enriched ${done} case records with AI headnotes and precedent analysis.`);
+      setStatus(`Created AI summaries for ${done} court cases.`);
     } catch (err) {
       setError((err as Error).message || "Enrich failed");
-      setStatus("Enrich failed");
+      setStatus("Could not create AI summaries. Please try again.");
     } finally {
       setEnriching(false);
     }
@@ -304,7 +304,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
   function handleEscalateToAgent() {
     if (!onStartAgent) return;
     const prompt = selected
-      ? `Conduct an autonomous strategic investigation on ${selected.Title} (${selected.citation?.[0] || "precedent"}). Formulate our offensive and defensive legal theory, map adverse authorities, and generate an IRAC memorandum.`
+      ? `Research ${selected.Title} (${selected.citation?.[0] || "case"}). Build our legal argument, find opposing cases from the other side, and write a full legal memo.`
       : query;
     const court = selected?.courtId || selected?.court || selectedJurisdiction || undefined;
     onStartAgent(prompt, court);
@@ -327,8 +327,8 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search topic, precedent, or doctrine, e.g. trade secret reverse engineering"
-              aria-label="Search legal topic"
+              placeholder="Search any legal topic or case, e.g. trade secrets or fair use"
+              aria-label="Search court cases and legal topics"
             />
             {query && (
               <button
@@ -362,10 +362,10 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
               className="btn btn-secondary btn-sm"
               onClick={() => void handleExtract()}
               disabled={!results.length || extracting || enriching || loading}
-              title="Pull full judicial opinion texts from CourtListener"
+              title="Get full decision text written by judges"
             >
               {extracting ? <CircleNotch size={14} className="spin" /> : <Stack size={14} />}
-              <span>Extract Texts</span>
+              <span>Get Full Text</span>
             </button>
 
             <button
@@ -373,10 +373,10 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
               className="btn btn-secondary btn-sm"
               onClick={() => void handleEnrich()}
               disabled={!results.length || enriching || extracting || loading}
-              title="Generate AI headnotes, issues, and procedural posture"
+              title="Generate AI summaries and key takeaways"
             >
               {enriching ? <CircleNotch size={14} className="spin" /> : <Sparkle size={14} weight="fill" />}
-              <span>AI Headnotes</span>
+              <span>AI Summary</span>
             </button>
 
             <button
@@ -384,10 +384,10 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
               className="btn btn-secondary btn-sm"
               onClick={() => setJsonOpen(true)}
               disabled={!results.length}
-              title="Inspect structured CourtListener JSON payload"
+              title="View raw data (JSON)"
             >
               <BracketsCurly size={14} />
-              <span>JSON</span>
+              <span>View Data</span>
             </button>
 
             <button
@@ -395,7 +395,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
               className="btn btn-secondary btn-sm"
               onClick={handleDownloadAll}
               disabled={!results.length}
-              title="Download research session as JSON"
+              title="Download research results"
             >
               <DownloadSimple size={14} />
               <span>Export</span>
@@ -406,10 +406,10 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                 type="button"
                 className="btn btn-solid btn-sm agent-escalate-btn"
                 onClick={handleEscalateToAgent}
-                title="Send current search or case to Autonomous AI Agent"
+                title="Open this case in the AI Legal Studio"
               >
                 <Sparkle size={14} weight="fill" />
-                <span>Launch in Studio</span>
+                <span>Open in AI Studio</span>
               </button>
             )}
           </div>
@@ -447,7 +447,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
         {/* Extraction Progress Bar */}
         {(extracting || extractProgress > 0) && (
           <div className="extract-progress">
-            <span>Extracting Opinion Records ({Math.round(extractProgress * 100)}%)</span>
+            <span>Loading Full Decisions ({Math.round(extractProgress * 100)}%)</span>
             <div className="bar" aria-hidden>
               <span style={{ transform: `scaleX(${extractProgress || 0.05})` }} />
             </div>
@@ -462,7 +462,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
           <div className="panel-head">
             <div className="panel-title-row">
               <Scales size={16} color="var(--accent)" />
-              <h2>Judicial Dockets</h2>
+              <h2>Court Cases</h2>
             </div>
             <span className="count-badge">
               {loading ? "Searching..." : `${results.length}${total ? ` of ${total.toLocaleString()}` : ""}`}
@@ -480,8 +480,8 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
           {!loading && results.length === 0 && (
             <div className="empty-state">
               <Scales size={42} color="var(--text-mute)" />
-              <h3>No Cases Loaded</h3>
-              <p>Search a legal inquiry or select a jurisdiction above to pull CourtListener opinions.</p>
+              <h3>No Cases Found</h3>
+              <p>Search a legal topic or pick a court above to find real decisions.</p>
             </div>
           )}
 
@@ -497,7 +497,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                       onClick={() => setSelectedId(c.Id)}
                     >
                       <div className="docket-top">
-                        <span className="docket-court">{c.court || "Federal Appellate"}</span>
+                        <span className="docket-court">{c.court || "Federal Appeals Court"}</span>
                         {c.dateFiled && <span className="docket-date">{c.dateFiled}</span>}
                       </div>
 
@@ -507,16 +507,16 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                         {c.citation?.[0] ? (
                           <span className="cite-pill">{c.citation[0]}</span>
                         ) : c.docketNumber ? (
-                          <span className="cite-pill">Docket {c.docketNumber}</span>
+                          <span className="cite-pill">Case #{c.docketNumber}</span>
                         ) : null}
 
                         {c.extracted ? (
                           <span className="badge-ok">🟢 Full Text</span>
                         ) : (
-                          <span className="badge-partial">🟡 Metadata</span>
+                          <span className="badge-partial">🟡 Summary Only</span>
                         )}
 
-                        {c.enriched && <span className="badge-enriched">⚡ AI Headnotes</span>}
+                        {c.enriched && <span className="badge-enriched">⚡ AI Summary</span>}
                       </div>
 
                       {c.snippet && <p className="snippet docket-snippet">{c.snippet}</p>}
@@ -529,7 +529,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
         </section>
 
         {/* RIGHT PANEL: Authoritative Judicial Slip Opinion & Headnotes */}
-        <section className="panel panel-detail" aria-label="Judicial Opinion Inspector">
+        <section className="panel panel-detail" aria-label="Court Decision Viewer">
           <div className="panel-head detail-head-bar">
             <div className="detail-tabs" role="tablist">
               <button
@@ -539,7 +539,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                 className={`canvas-tab ${detailTab === "text" ? "active" : ""}`}
                 onClick={() => setDetailTab("text")}
               >
-                <FileText size={15} /> Opinion Text
+                <FileText size={15} /> Decision Text
               </button>
               <button
                 type="button"
@@ -548,8 +548,8 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                 className={`canvas-tab ${detailTab === "headnotes" ? "active" : ""}`}
                 onClick={() => setDetailTab("headnotes")}
               >
-                <Sparkle size={15} weight="fill" /> AI Headnotes
-                {selected?.enriched && <span className="tab-badge">Active</span>}
+                <Sparkle size={15} weight="fill" /> AI Summary
+                {selected?.enriched && <span className="tab-badge">Ready</span>}
               </button>
               <button
                 type="button"
@@ -558,7 +558,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                 className={`canvas-tab ${detailTab === "docket" ? "active" : ""}`}
                 onClick={() => setDetailTab("docket")}
               >
-                <BookmarkSimple size={15} /> Docket &amp; Record
+                <BookmarkSimple size={15} /> Court Details
               </button>
             </div>
 
@@ -568,10 +568,10 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                   type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={copyBluebook}
-                  title="Copy formal Bluebook citation to clipboard"
+                  title="Copy official case citation"
                 >
                   <Copy size={13} />
-                  <span>{copiedCite ? "Copied Citation" : "Copy Bluebook"}</span>
+                  <span>{copiedCite ? "Copied Citation" : "Copy Citation"}</span>
                 </button>
 
                 {onStartAgent && (
@@ -579,10 +579,10 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                     type="button"
                     className="btn btn-solid btn-sm"
                     onClick={handleEscalateToAgent}
-                    title="Brief this precedent in AI Agent Studio"
+                    title="Analyze this case in AI Legal Studio"
                   >
                     <Lightning size={13} weight="fill" />
-                    <span>Brief Precedent</span>
+                    <span>Open in AI Studio</span>
                   </button>
                 )}
               </div>
@@ -600,7 +600,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
               >
                 <FileText size={48} color="var(--text-mute)" />
                 <h3>No Case Selected</h3>
-                <p>Select any judicial opinion from the left docket list to inspect the full text and headnotes.</p>
+                <p>Click on any court case from the list on the left to read the full decision and AI summary.</p>
               </motion.div>
             )}
 
@@ -630,12 +630,12 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                       <span className="meta-val">{selected.dateFiled || "Pending Judgment"}</span>
                     </div>
                     <div className="meta-col">
-                      <span className="meta-label">DOCKET NO:</span>
+                      <span className="meta-label">CASE NUMBER:</span>
                       <span className="meta-val font-mono">{selected.docketNumber || selected.Id}</span>
                     </div>
                     <div className="meta-col">
-                      <span className="meta-label">JURISDICTION:</span>
-                      <span className="meta-val">{selected.jurisdiction || selected.court || "Federal Appellate"}</span>
+                      <span className="meta-label">COURT:</span>
+                      <span className="meta-val">{selected.jurisdiction || selected.court || "Federal Appeals Court"}</span>
                     </div>
                   </div>
                 </header>
@@ -645,7 +645,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                   <div className="opinion-tab-content">
                     <div className="text-toolbar">
                       <div className="typography-toggles">
-                        <span className="toggle-label">Typography:</span>
+                        <span className="toggle-label">Font:</span>
                         <button
                           type="button"
                           className={`btn-toggle ${fontChoice === "serif" ? "active" : ""}`}
@@ -681,7 +681,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                     <div className={`opinion-text-body font-${fontChoice}`}>
                       {selected.opinionText ||
                         selected.snippet ||
-                        "Full judicial text has not been extracted yet. Click 'Extract Texts' in the top command bar to retrieve the full opinion from CourtListener."}
+                        "Full decision text has not been loaded yet. Click 'Get Full Text' in the top bar to download the complete opinion."}
                     </div>
                   </div>
                 )}
@@ -692,10 +692,10 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                     {!selected.enriched && !selected.summary ? (
                       <div className="headnotes-empty">
                         <Sparkle size={36} color="var(--accent)" />
-                        <h4>AI Headnotes Not Generated Yet</h4>
+                        <h4>No AI Summary Generated Yet</h4>
                         <p>
-                          Click the <strong>AI Headnotes</strong> button in the top command bar to have Gemini 2.0
-                          synthesize the core issue, procedural posture, controlling holding, and precedents.
+                          Click the <strong>AI Summary</strong> button above to have AI
+                          summarize the core question, what the judge ruled, and the main cases cited.
                         </p>
                         <button
                           type="button"
@@ -704,26 +704,26 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                           disabled={enriching}
                         >
                           {enriching ? <CircleNotch size={14} className="spin" /> : <Sparkle size={14} weight="fill" />}
-                          Synthesize Headnotes Now
+                          Generate AI Summary Now
                         </button>
                       </div>
                     ) : (
                       <div className="headnotes-body">
                         <div className="headnote-card">
-                          <div className="headnote-tag">Core Issue &amp; Holding</div>
+                          <div className="headnote-tag">Main Legal Question &amp; Ruling</div>
                           <div className="headnote-text">{selected.summary}</div>
                         </div>
 
                         {selected.outcome && (
                           <div className="headnote-card">
-                            <div className="headnote-tag">Procedural Posture / Judgment</div>
+                            <div className="headnote-tag">Court Judgment &amp; Outcome</div>
                             <div className="headnote-text">{selected.outcome}</div>
                           </div>
                         )}
 
                         {selected.precedents && selected.precedents.length > 0 && (
                           <div className="headnote-card">
-                            <div className="headnote-tag">Controlling Precedents Cited</div>
+                            <div className="headnote-tag">Important Past Cases Cited</div>
                             <div className="precedent-chips-list">
                               {selected.precedents.map((p) => (
                                 <span key={p} className="chip">
@@ -742,26 +742,26 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                 {detailTab === "docket" && (
                   <div className="docket-tab-content">
                     <div className="docket-info-card">
-                      <h4>Free Law Project / CourtListener Docket Record</h4>
+                      <h4>Official Court Record Details</h4>
                       <p>
-                        This judicial authority is indexed directly from CourtListener's public legal archive.
+                        This case record comes directly from CourtListener's public database of court decisions.
                       </p>
 
                       <div className="docket-fields-table">
                         <div className="df-row">
-                          <span className="df-label">Cluster Record ID</span>
+                          <span className="df-label">Case Record ID</span>
                           <span className="df-val font-mono">{selected.Id}</span>
                         </div>
                         <div className="df-row">
-                          <span className="df-label">Official Court Host</span>
+                          <span className="df-label">Court Name</span>
                           <span className="df-val">{selected.court}</span>
                         </div>
                         <div className="df-row">
-                          <span className="df-label">Filing Timestamp</span>
+                          <span className="df-label">Date Decided</span>
                           <span className="df-val">{selected.dateFiled}</span>
                         </div>
                         <div className="df-row">
-                          <span className="df-label">Formal Bluebook String</span>
+                          <span className="df-label">Official Legal Citation</span>
                           <span className="df-val font-mono">{bluebookCitation}</span>
                         </div>
                       </div>
@@ -774,7 +774,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                             rel="noreferrer"
                             className="btn btn-secondary btn-sm"
                           >
-                            Open CourtListener Record <ArrowSquareOut size={13} />
+                            View on CourtListener <ArrowSquareOut size={13} />
                           </a>
                         )}
                         <button
@@ -782,7 +782,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                           className="btn btn-secondary btn-sm"
                           onClick={handleDownloadOne}
                         >
-                          <DownloadSimple size={13} /> Download Case JSON
+                          <DownloadSimple size={13} /> Download Case Data
                         </button>
                       </div>
                     </div>
@@ -819,13 +819,13 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
             >
               <div className="modal-head">
                 <h2 id="json-modal-title">
-                  <BracketsCurly size={18} /> Research Dataset ({results.length} cases)
+                  <BracketsCurly size={18} /> Case Data ({results.length} cases)
                 </h2>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={() => setJsonOpen(false)}
-                  title="Close JSON Inspector"
+                  title="Close"
                 >
                   <X size={14} />
                 </button>
@@ -844,7 +844,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
                 </button>
                 <button type="button" className="btn btn-primary" onClick={handleDownloadAll}>
                   <DownloadSimple size={14} />
-                  Download JSON
+                  Download Data (JSON)
                 </button>
               </div>
             </motion.div>

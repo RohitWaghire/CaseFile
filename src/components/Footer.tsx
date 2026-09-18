@@ -12,8 +12,7 @@ export function Footer() {
             </span>
           </span>
           <p>
-            Autonomous legal research &amp; IRAC briefs — plans multi-step
-            CourtListener investigations and synthesizes verified briefs.
+            Smart legal research and memos — searches real court cases and helps you prepare clear legal arguments.
           </p>
           <p>
             <a
@@ -21,13 +20,13 @@ export function Footer() {
               target="_blank"
               rel="noreferrer"
             >
-              LexHack 2026
+              LexHack 2026 Project
             </a>
           </p>
         </div>
         <div className="footer-meta">
           <p>
-            Data from{" "}
+            Court data from{" "}
             <a
               href="https://www.courtlistener.com/"
               target="_blank"
@@ -35,8 +34,7 @@ export function Footer() {
             >
               CourtListener
             </a>{" "}
-            / Free Law Project. Not legal advice. Verify citations against
-            primary sources before filing.
+            and the Free Law Project. This tool does not give official legal advice. Always double-check real court rules and decisions before using them in court.
           </p>
         </div>
       </div>

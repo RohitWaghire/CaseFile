@@ -1,15 +1,15 @@
-# CaseFile AI — Autonomous Legal Research Agent
+# CaseFile AI — Smart Legal Research Assistant
 
 > **LexHack 2026 Submission**  
 > Tracks: **⚡ Legal Automation & Workflow Innovation** · **🛡️ AI Safety, Ethics & Governance** · **📜 Digital Rights**
 
-**CaseFile AI** is an autonomous conversational legal research agent and litigation strategy workbench. Rather than acting as a simple search box or generic chat wrapper, CaseFile AI executes an end-to-end **Reasoning + Acting (ReAct)** loop across live federal and state court records from [CourtListener](https://www.courtlistener.com/) (Free Law Project):
+**CaseFile AI** is an intelligent assistant that does real legal research for you. Instead of acting like a basic search box or a chatbot that makes up answers, CaseFile AI works step-by-step using real court records from [CourtListener](https://www.courtlistener.com/) (Free Law Project):
 
-1. **Deconstructs Legal Objectives**: Automatically identifies statutory frameworks, relevant circuit jurisdictions, majority standards, and potential counter-arguments.
-2. **Autonomous Tool Execution**: Dispatches targeted queries to CourtListener REST API v4, reads and filters opinion full texts, and separates holdings from dicta.
-3. **Adversarial Precedent Mapping**: Organizes case law into an affirmative strategy alongside opposing counsel's best counter-precedents and tactical distinguishing arguments.
-4. **Anti-Hallucination Citation Verification**: Audits every cited legal authority against authentic CourtListener docket clusters to eliminate fabricated case citations.
-5. **Formal IRAC Legal Memorandum**: Synthesizes a structured legal brief (Issue, Rule, Application, Counter-arguments, Conclusion) with one-click Markdown, Printable PDF, and JSON export.
+1. **Understands Your Legal Question**: Breaks down your question into key laws, the right courts to check, and points the other side might make.
+2. **Searches Real Court Records**: Searches CourtListener directly, reads real court rulings, and pulls out the key decision made by the judge.
+3. **Compares Both Sides**: Puts helpful cases that support you side-by-side with opposing cases the other side will argue, showing how to answer their claims.
+4. **Checks Every Citation**: Verifies every case citation against real official court records so there are zero fake citations.
+5. **Writes a Complete Legal Memo**: Prepares a court-ready legal memo in standard IRAC format (Issue, Rule, Facts, and Answer) with one click to copy, print, or export.
 
 ---
 

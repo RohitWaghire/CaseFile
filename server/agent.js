@@ -246,14 +246,14 @@ export async function runAgentChatStream({ req, res, clToken, defaultGeminiKey }
   const preferredCourt = body.court || "";
 
   if (!latestMessage.trim()) {
-    sendSse(res, "error", { message: "No objective or prompt provided." });
+    sendSse(res, "error", { message: "Please enter a question or topic to research." });
     sendSse(res, "done", {});
     return res.end();
   }
 
   // 1. Initial acknowledgment
   sendSse(res, "start", {
-    message: "Initializing CaseFile Autonomous Legal Agent...",
+    message: "Starting CaseFile Research Assistant...",
     objective: latestMessage,
     hasApiKey: Boolean(apiKey),
   });
@@ -269,8 +269,8 @@ export async function runAgentChatStream({ req, res, clToken, defaultGeminiKey }
   try {
     // Phase 1: Planning & Legal Issue Decomposition
     sendSse(res, "thought", {
-      title: "Analyzing Legal Objective",
-      detail: `Deconstructing issue, statutory framework, and precedent requirements for: "${latestMessage.slice(0, 80)}..."`,
+      title: "Understanding Your Legal Question",
+      detail: `Breaking down your question into key laws and court rules for: "${latestMessage.slice(0, 80)}..."`,
       phase: "planning",
     });
 
@@ -280,19 +280,21 @@ export async function runAgentChatStream({ req, res, clToken, defaultGeminiKey }
 
     if (apiKey) {
       try {
-        const planPrompt = `You are a Senior Appellate Research Strategist. Break down this legal inquiry into two precise search queries for CourtListener:
-1) PRIMARY SEARCH: to find favorable controlling authorities or majority standards.
-2) ADVERSE / OPPOSING SEARCH: to identify contrary precedents or arguments opposing counsel will make.
-Also detect the intended court/jurisdiction if specified (e.g., 'ca9', 'ca2', 'scotus', 'cal', or empty string for all).
+        const planPrompt = `You are a legal research assistant. Break down this legal question into two simple search queries for court opinions:
+1) PRIMARY SEARCH: to find helpful court rulings that support our side.
+2) ADVERSE / OPPOSING SEARCH: to find rulings the other side might use against us.
+Also detect the intended court or state if mentioned (e.g. 'ca9', 'ca2', 'scotus', 'cal', or empty string for all).
 
-Legal Inquiry: "${latestMessage}"
+Writing rule: Keep everything clear and simple at an 8th-grade reading level.
+
+Legal Question: "${latestMessage}"
 
 Return ONLY valid JSON in this shape:
 {
-  "primaryQuery": "targeted keywords for majority/favorable holding",
-  "counterQuery": "targeted keywords for adverse/distinguishable precedent",
+  "primaryQuery": "simple search words for helpful cases",
+  "counterQuery": "simple search words for opposing cases",
   "jurisdiction": "court code or empty string",
-  "reasoning": "brief 1-2 sentence legal rationale"
+  "reasoning": "1-2 short, simple sentences explaining your search plan"
 }`;
         const planRaw = await callGemini({
           apiKey,
@@ -306,8 +308,8 @@ Return ONLY valid JSON in this shape:
         if (parsedPlan.jurisdiction && !inferredJurisdiction) inferredJurisdiction = parsedPlan.jurisdiction;
 
         sendSse(res, "thought", {
-          title: "Research Strategy Formulated",
-          detail: parsedPlan.reasoning || "Search queries prepared for favorable and counter-precedents.",
+          title: "Research Plan Ready",
+          detail: parsedPlan.reasoning || "Search queries ready to find helpful rulings and opposing cases.",
           phase: "planning",
         });
       } catch (err) {
@@ -320,7 +322,7 @@ Return ONLY valid JSON in this shape:
       tool: "search_courtlistener",
       query: primaryQuery,
       court: inferredJurisdiction || "All Jurisdictions",
-      purpose: "Locate controlling precedents and persuasive holdings",
+      purpose: "Find court decisions that support your side",
     });
 
     const primaryResults = await searchCourtListener({
@@ -345,7 +347,7 @@ Return ONLY valid JSON in this shape:
       tool: "search_courtlistener_adverse",
       query: effectiveCounterQuery,
       court: inferredJurisdiction || "All Jurisdictions",
-      purpose: "Identify adverse authorities opposing counsel will likely cite",
+      purpose: "Find opposing cases the other side might use against you",
     });
 
     let adverseResults = { count: 0, results: [] };
@@ -383,8 +385,8 @@ Return ONLY valid JSON in this shape:
 
     // Phase 4: Deep Reading of Opinion Text
     sendSse(res, "thought", {
-      title: "Examining Opinion Text & Facts",
-      detail: `Extracting legal holdings and separating ratio decidendi from obiter dicta across ${uniqueCases.length} authorities.`,
+      title: "Reading Court Decisions",
+      detail: `Finding key rulings and facts across ${uniqueCases.length} court cases.`,
       phase: "reading",
     });
 
@@ -397,8 +399,8 @@ Return ONLY valid JSON in this shape:
 
     // Phase 5: Anti-Hallucination Citation Verification
     sendSse(res, "thought", {
-      title: "Verifying Authority Integrity",
-      detail: "Cross-checking citations against CourtListener cluster dockets to guarantee zero hallucinated precedents.",
+      title: "Checking Case Records",
+      detail: "Checking case citations against real court records so every reference is real.",
       phase: "verifying",
     });
 
@@ -426,16 +428,16 @@ Return ONLY valid JSON in this shape:
 
     // Phase 6: Construct Adversarial Precedent Matrix & IRAC Memorandum
     sendSse(res, "thought", {
-      title: "Synthesizing Adversarial Matrix & Brief",
-      detail: "Balancing affirmative legal arguments with rebuttal strategies for opposing counsel's positions.",
+      title: "Putting Together Your Brief and Case Table",
+      detail: "Matching helpful court cases with answers to the other side's arguments.",
       phase: "synthesis",
     });
 
     if (apiKey) {
-      const synthesisPrompt = `You are a high-level legal research and briefing specialist.
+      const synthesisPrompt = `You are a helpful legal research assistant.
 Objective: "${latestMessage}"
 
-Here are the verified court precedents found via CourtListener:
+Here are real court cases found in court records:
 ${uniqueCases
   .map(
     (c, i) =>
@@ -446,30 +448,36 @@ Text snippet: ${c.snippet}`
   )
   .join("\n\n")}
 
+CRITICAL WRITING RULE:
+Write in plain, simple English that an 8th grader can easily understand.
+- Use short sentences and everyday words.
+- Avoid hard legal jargon. If you must use a legal word, explain it right away in simple terms.
+- Keep explanations direct and helpful.
+
 Your task:
-1. Divide these cases into an ADVERSARIAL MATRIX:
-   - "favorable": cases supporting our position with key favorable holding and how to apply it.
-   - "adverse": cases opposing counsel will cite, with specific distinguishing strategies (why it does not bar our claim or defense).
-2. Generate an authoritative IRAC Legal Memorandum:
-   - executiveSummary: 2-3 sentence strategic briefing
-   - issue: The core legal question(s) presented
-   - rule: Controlling legal principles and statutory standards
-   - application: Detailed factual and legal analysis applying favorable cases
-   - counterArguments: Opposing counsel's best arguments and our factual/legal rebuttals
-   - conclusion: Actionable conclusion and recommended litigation move
-3. Draft a conversational response summarizing the findings directly to the user.
+1. Divide these cases into a TWO-SIDED TABLE:
+   - "favorable": cases that help our argument, with a simple summary and how to use it.
+   - "adverse": cases the other side might use, with simple tips on why that case does not hurt us.
+2. Write a clear Legal Memo (IRAC format):
+   - executiveSummary: 2-3 short sentences giving the bottom line.
+   - issue: The main legal question in simple words.
+   - rule: The main rule or law that applies here, explained simply.
+   - application: How the law and our facts fit together.
+   - counterArguments: What the other side might argue, and our simple answers.
+   - conclusion: Next steps and practical advice.
+3. Write a friendly, clear reply summarizing the findings.
 
 Return ONLY valid JSON matching this schema:
 {
-  "conversationalReply": "Direct, professional, articulate answer addressing the user's inquiry with key conclusions and next steps.",
+  "conversationalReply": "Friendly, simple summary of what you found and what to do next.",
   "matrix": {
     "favorable": [
       {
         "id": "case id or string",
         "title": "Case Title",
         "citation": "citation",
-        "holding": "Summary of holding supporting our position",
-        "strategicValue": "How to deploy this in briefs or negotiations"
+        "holding": "Simple summary of why this ruling helps us",
+        "strategicValue": "How to use this in our legal argument"
       }
     ],
     "adverse": [
@@ -477,13 +485,13 @@ Return ONLY valid JSON matching this schema:
         "id": "case id or string",
         "title": "Case Title",
         "citation": "citation",
-        "opposingArgument": "How opposing counsel will use this authority",
-        "distinguishingStrategy": "Specific factual or legal grounds to distinguish or neutralize this precedent"
+        "opposingArgument": "What the other side will argue using this case",
+        "distinguishingStrategy": "Why this case does not apply to our situation"
       }
     ]
   },
   "iracMemo": {
-    "title": "MEMORANDUM OF LAW: [Topic]",
+    "title": "LEGAL MEMO: [Topic in Simple Words]",
     "executiveSummary": "...",
     "issue": "...",
     "rule": "...",
@@ -532,8 +540,8 @@ Return ONLY valid JSON matching this schema:
         id: c.id,
         title: c.title,
         citation: c.citation?.[0] || c.court,
-        holding: c.snippet ? `${c.snippet.slice(0, 180)}...` : "Supports the standard favorable position on this issue.",
-        strategicValue: "Establishes affirmative precedent under governing procedural standards.",
+        holding: c.snippet ? `${c.snippet.slice(0, 180)}...` : "Supports our side on this legal question.",
+        strategicValue: "Gives you a helpful court ruling that supports your main argument.",
         link: c.link,
       }));
 
@@ -541,8 +549,8 @@ Return ONLY valid JSON matching this schema:
         id: c.id,
         title: c.title,
         citation: c.citation?.[0] || c.court,
-        opposingArgument: "Opposing counsel will cite this authority to argue strict compliance or limitation.",
-        distinguishingStrategy: "Distinguish on factual grounds regarding lack of willful conduct or distinct evidentiary record.",
+        opposingArgument: "The other side will likely use this case to argue for strict limits on your claim.",
+        distinguishingStrategy: "Show that this case does not apply because your facts and evidence are different.",
         link: c.link,
       }));
 
@@ -557,24 +565,24 @@ Return ONLY valid JSON matching this schema:
 
       state.matrix = { favorable: favList, adverse: advList };
       state.memo = {
-        title: `MEMORANDUM OF LAW: ${subject.toUpperCase()}`,
-        executiveSummary: `This memorandum synthesizes ${uniqueCases.length} controlling and persuasive authorities retrieved from CourtListener v4. The appellate consensus recognizes decisive strategic defenses when affirmative statutory elements are asserted in light of governing circuit precedent.`,
-        issue: `Whether the legal positions and factual claims regarding "${subject}" find support under current governing standards, and how anticipated adverse authorities can be distinguished.`,
-        rule: `Under prevailing doctrine, parties asserting or defending these claims must establish particularized statutory elements while distinguishing inapposite rulings that turn on distinct evidentiary showings.`,
+        title: `LEGAL MEMO: ${subject.toUpperCase()}`,
+        executiveSummary: `This memo reviews ${uniqueCases.length} real court decisions from CourtListener. The court rulings show that you have strong legal defenses when you clearly show each fact required by the law.`,
+        issue: `Can the legal claims about "${subject}" be proven under current court rules, and how can we show that opposing cases do not apply?`,
+        rule: `Under current law, whoever brings or defends these claims must show specific facts that fit each part of the legal rule, and show why cases with different facts do not control.`,
         application: uniqueCases[0]
-          ? `In ${uniqueCases[0].title}, the court reaffirmed that statutory standards require particularized showing. Relevant holding: "${uniqueCases[0].snippet.slice(0, 260)}..." This authority directly substantiates the affirmative argument.`
-          : "Application depends on the specific factual showing under review.",
+          ? `In ${uniqueCases[0].title}, the court agreed that the law requires a clear factual showing. Key quote: "${uniqueCases[0].snippet.slice(0, 260)}..." This decision directly supports your main point.`
+          : "How the law applies depends on the exact facts in your case.",
         counterArguments: uniqueCases[1]
-          ? `Opposing parties frequently rely on ${uniqueCases[1].title} to argue narrower statutory scope. However, this precedent is distinguishable based on the differing procedural posture and distinct factual background.`
-          : "Anticipated defenses hinge on statutory exemption and procedural timing limitations.",
-        conclusion: `The strategic posture is legally robust. Counsel is advised to lead with ${uniqueCases[0]?.title || "favorable authorities"} in preliminary briefing while preemptively addressing counter-precedents using the factual distinctions detailed herein.`,
+          ? `The other side often points to ${uniqueCases[1].title} to argue for a narrower rule. But that case is different because it involved different facts and a different stage of the lawsuit.`
+          : "The other side will likely argue that you waited too long or that your facts do not fit the law.",
+        conclusion: `Your legal position looks strong. We recommend leading with ${uniqueCases[0]?.title || "helpful court cases"} in your first brief, while using the facts above to answer any cases the other side brings up.`,
       };
 
       sendSse(res, "matrix_update", { matrix: state.matrix });
       sendSse(res, "memo_ready", { memo: state.memo });
       sendSse(res, "message", {
         role: "assistant",
-        content: `I have completed an autonomous research pass on CourtListener for **"${latestMessage}"**. I analyzed **${uniqueCases.length} published opinions**, constructed an **Adversarial Precedent Matrix**, verified citations against court records, and compiled an **IRAC Legal Memorandum** in the canvas on the right.\n\n*(Note: To configure a specific model or personal key, click Set API Key in the top right).*`,
+        content: `I finished searching CourtListener for **"${latestMessage}"**. I reviewed **${uniqueCases.length} real court opinions**, built a **Two-Sided Case Table**, checked the citations against court records, and wrote a clear **Legal Memo** on the right.\n\n*(Tip: If you want to use your own Google AI key, click Set API Key in the top right).*`,
         casesCount: uniqueCases.length,
       });
     }

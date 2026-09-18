@@ -52,14 +52,14 @@ export function PrecedentGraph({
     // Central anchor node (e.g. governing statute or query root)
     newNodes.push({
       id: "root-issue",
-      title: "Controlling Doctrine Anchor",
+      title: "Main Law Foundation",
       citation: "18 U.S.C. § 1836 / U.S. Const.",
       type: "root",
       year: 2016,
-      court: "Federal Statutory Root",
+      court: "Written Federal Law",
       x: 380,
       y: 220,
-      holding: "Statutory & constitutional foundation governing trade secret & privacy analysis",
+      holding: "The core federal laws and constitutional rules governing this legal issue.",
       importance: 3,
     });
 
@@ -171,10 +171,10 @@ export function PrecedentGraph({
       <div className="graph-toolbar">
         <div className="graph-title-block">
           <h4 className="graph-heading">
-            <Sparkle size={15} weight="fill" color="var(--accent)" /> Citation Network & Precedent Topology
+            <Sparkle size={15} weight="fill" color="var(--accent)" /> Case Network Map
           </h4>
           <span className="graph-subtitle">
-            Visualizing doctrinal links, adverse tensions, and controlling authorities
+            See how court cases connect, support each other, or argue the other side
           </span>
         </div>
 
@@ -192,14 +192,14 @@ export function PrecedentGraph({
               className={`seg-btn ${filter === "favorable" ? "active" : ""}`}
               onClick={() => setFilter("favorable")}
             >
-              <CheckCircle size={12} weight="bold" color="var(--accent)" /> Favorable
+              <CheckCircle size={12} weight="bold" color="var(--accent)" /> Helpful Cases
             </button>
             <button
               type="button"
               className={`seg-btn ${filter === "adverse" ? "active" : ""}`}
               onClick={() => setFilter("adverse")}
             >
-              <ShieldWarning size={12} weight="bold" color="var(--warn)" /> Adverse
+              <ShieldWarning size={12} weight="bold" color="var(--warn)" /> Opposing Cases
             </button>
           </div>
 
@@ -409,13 +409,13 @@ export function PrecedentGraph({
                 className={`node-card-badge ${selectedNode.type}`}
               >
                 {selectedNode.type === "root"
-                  ? "Doctrine Foundation"
+                  ? "Law Foundation"
                   : selectedNode.type === "favorable"
-                  ? "Favorable Precedent"
-                  : "Adverse Authority"}
+                  ? "Case Supporting You"
+                  : "Opposing Case (Other Side)"}
               </span>
               {isVerifiedAuthority && (
-                <span className="node-card-badge favorable" title="Verified against CourtListener cluster docket">
+                <span className="node-card-badge favorable" title="Verified against official court dockets">
                   <CheckCircle size={12} weight="fill" /> Verified
                 </span>
               )}
@@ -438,7 +438,7 @@ export function PrecedentGraph({
                   className="btn btn-secondary btn-sm"
                   onClick={() => onSelectCase(selectedNode.title)}
                 >
-                  <Eye size={12} /> Inspect Full Record
+                  <Eye size={12} /> Read Full Case
                 </button>
               )}
             </div>
@@ -450,19 +450,19 @@ export function PrecedentGraph({
       <div className="graph-legend">
         <div className="legend-item">
           <span className="legend-dot root" />
-          <span>Statutory Root (§ 1836 / Rule of Law)</span>
+          <span>Main Law (§ 1836 / Legal Foundation)</span>
         </div>
         <div className="legend-item">
           <span className="legend-dot favorable" />
-          <span>Controlling Precedent (Favorable)</span>
+          <span>Cases That Support You</span>
         </div>
         <div className="legend-item">
           <span className="legend-dot adverse" />
-          <span>Adverse Authority (Opposing Counsel)</span>
+          <span>Opposing Cases (The Other Side)</span>
         </div>
         <div className="legend-item">
           <span className="legend-line dashed" />
-          <span>Distinguishing Doctrine</span>
+          <span>Shows Why Opposing Case Differs</span>
         </div>
       </div>
     </div>

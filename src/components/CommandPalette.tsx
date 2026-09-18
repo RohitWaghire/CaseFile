@@ -36,12 +36,12 @@ export function CommandPalette({
 
   const COMMANDS = useMemo(() => [
     {
-      category: "Navigation & Workspaces",
+      category: "Pages & Tools",
       items: [
         {
           id: "nav-home",
-          title: "Overview (Landing Console)",
-          sub: "Platform introduction, live inquiry terminal, and deliverables showcase",
+          title: "Overview Page",
+          sub: "See how CaseFile works, try a quick search, and explore sample results",
           icon: <House size={16} color="var(--accent)" />,
           action: () => {
             onNavigateView?.("home");
@@ -50,8 +50,8 @@ export function CommandPalette({
         },
         {
           id: "nav-agent",
-          title: "AI Agent Studio",
-          sub: "Autonomous multi-step ReAct planning, adversarial matrix, and IRAC memo",
+          title: "AI Legal Studio",
+          sub: "Ask any legal question to research cases, see both sides, and draft a memo",
           icon: <Sparkle size={16} color="var(--accent)" />,
           action: () => {
             onNavigateView?.("agent");
@@ -60,8 +60,8 @@ export function CommandPalette({
         },
         {
           id: "nav-research",
-          title: "Case Research Desk",
-          sub: "Search CourtListener v4 dockets, extract slip opinions, and generate headnotes",
+          title: "Case Search Desk",
+          sub: "Search real court records, read full decisions, and generate AI summaries",
           icon: <Books size={16} color="var(--warn)" />,
           action: () => {
             onNavigateView?.("research");
@@ -71,12 +71,12 @@ export function CommandPalette({
       ],
     },
     {
-      category: "Canvas Views",
+      category: "Document & Map Views",
       items: [
         {
           id: "tab-matrix",
-          title: "Adversarial Matrix",
-          sub: "Inspect controlling affirmative vs hostile counter-precedents",
+          title: "Case Comparison Table",
+          sub: "Compare cases that help you against cases the other side will use",
           icon: <Scales size={16} color="var(--accent)" />,
           action: () => {
             onNavigateTab?.("matrix");
@@ -85,8 +85,8 @@ export function CommandPalette({
         },
         {
           id: "tab-graph",
-          title: "Precedent Graph Topology",
-          sub: "Open interactive node-link citation network",
+          title: "Case Network Map",
+          sub: "Explore an interactive visual map connecting related court cases",
           icon: <Sparkle size={16} color="var(--accent)" />,
           action: () => {
             onNavigateTab?.("graph");
@@ -95,8 +95,8 @@ export function CommandPalette({
         },
         {
           id: "tab-split",
-          title: "Circuit Split Matrix",
-          sub: "Analyze divergence across the 13 Federal Circuits of Appeals",
+          title: "Court Disagreements",
+          sub: "See where different federal appeals courts disagree on the law",
           icon: <GitBranch size={16} color="#c4a35a" />,
           action: () => {
             onNavigateTab?.("split");
@@ -105,8 +105,8 @@ export function CommandPalette({
         },
         {
           id: "tab-timeline",
-          title: "Doctrine Timeline",
-          sub: "50-year precedent evolution from Kewanee Oil to 2026",
+          title: "50-Year Legal Timeline",
+          sub: "Follow how this legal rule changed from 1974 to today",
           icon: <Clock size={16} color="#6aab8a" />,
           action: () => {
             onNavigateTab?.("timeline");
@@ -115,8 +115,8 @@ export function CommandPalette({
         },
         {
           id: "tab-memo",
-          title: "IRAC Legal Brief & Pleading Paper",
-          sub: "Review court-formatted memorandum with co-counsel tools",
+          title: "Legal Memo (IRAC Format)",
+          sub: "Read a complete legal brief with the question, rule, facts, and answers",
           icon: <FileText size={16} color="var(--text)" />,
           action: () => {
             onNavigateTab?.("memo");
@@ -125,8 +125,8 @@ export function CommandPalette({
         },
         {
           id: "tab-citations",
-          title: "Anti-Hallucination Citation Audit",
-          sub: "Audit case references against official CourtListener dockets",
+          title: "Fact-Checked Sources",
+          sub: "Check every case citation against official court records to ensure it is real",
           icon: <ShieldCheck size={16} color="#72ba97" />,
           action: () => {
             onNavigateTab?.("citations");
@@ -135,8 +135,8 @@ export function CommandPalette({
         },
         {
           id: "tab-reader",
-          title: "Opinion Reader",
-          sub: "Deep-read full opinion text and judicial syllabus",
+          title: "Full Decision Reader",
+          sub: "Read the complete text of the decision written by the judge",
           icon: <Books size={16} color="var(--accent)" />,
           action: () => {
             onNavigateTab?.("reader");
@@ -146,16 +146,16 @@ export function CommandPalette({
       ],
     },
     {
-      category: "Litigation Scenarios",
+      category: "Sample Legal Questions",
       items: [
         {
           id: "preset-dtsa",
-          title: "DTSA Trade Secrets & Reverse Engineering",
-          sub: "9th Circuit clean-room defense & lawful decompilation",
+          title: "Trade Secrets & Reverse Engineering",
+          sub: "Find 9th Circuit rulings protecting engineers who legally take products apart",
           icon: <Sparkle size={16} color="var(--accent)" />,
           action: () => {
             onSelectPreset?.(
-              "We represent a technology startup accused of trade secret misappropriation under DTSA. The founder legitimately reverse-engineered public APIs. Identify controlling 9th Circuit precedents on clean-room reverse engineering, analyze opposing counsel's likely counter-arguments, and draft our defense brief.",
+              "We represent a startup accused of stealing trade secrets under the Defend Trade Secrets Act. The founder legally took apart public software code to see how it works. Find key 9th Circuit rulings that protect reverse engineering, analyze what the other side might argue, and draft our defense brief.",
               "ca9"
             );
             onClose();
@@ -163,12 +163,12 @@ export function CommandPalette({
         },
         {
           id: "preset-geofence",
-          title: "Fourth Amendment Warrantless Geofence Warrants",
-          sub: "Constitutional privacy challenges to mass location data dragnets",
+          title: "Fourth Amendment & Phone Location Searches",
+          sub: "Challenge broad police warrants that collect location data from all nearby phones",
           icon: <Sparkle size={16} color="var(--accent)" />,
           action: () => {
             onSelectPreset?.(
-              "Challenge a criminal conviction based on a Google geofence warrant. Search for adverse authorities and formulate our defense strategy emphasizing lack of particularized probable cause under Carpenter v. United States.",
+              "Challenge a criminal conviction based on a Google location search warrant. Find cases that help our defense showing that searching every phone in an area violates the Fourth Amendment under Carpenter v. United States.",
               "scotus"
             );
             onClose();
@@ -176,12 +176,12 @@ export function CommandPalette({
         },
         {
           id: "preset-ai",
-          title: "Generative AI Training & Copyright Fair Use",
-          sub: "Authors Guild, Andy Warhol, and intermediate transformativeness",
+          title: "AI Training & Copyright Fair Use",
+          sub: "Check if training AI on published work counts as fair use under copyright law",
           icon: <Sparkle size={16} color="var(--accent)" />,
           action: () => {
             onSelectPreset?.(
-              "Defense of an AI foundation model company facing copyright infringement. Evaluate fair use factor 1 (purpose and character) under Authors Guild v. Google and Andy Warhol Foundation v. Goldsmith.",
+              "Defend an AI company against copyright claims. Evaluate whether training on public text counts as fair use under Google and Warhol court decisions.",
               "ca2"
             );
             onClose();
@@ -190,12 +190,12 @@ export function CommandPalette({
       ],
     },
     {
-      category: "Actions",
+      category: "Quick Actions",
       items: [
         {
           id: "act-print",
-          title: "Print / Export Court Brief as PDF",
-          sub: "Invoke judicial print styling for filed pleading brief",
+          title: "Print / Save as PDF",
+          sub: "Print or save the legal memo formatted for court",
           icon: <Printer size={16} color="var(--text-soft)" />,
           action: () => {
             window.print();
@@ -295,7 +295,7 @@ export function CommandPalette({
         className="command-palette-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="Legal command palette"
+        aria-label="Quick command menu"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="palette-input-row">
@@ -304,8 +304,8 @@ export function CommandPalette({
             autoFocus
             type="text"
             className="palette-input"
-            aria-label="Search legal commands"
-            placeholder="Type a legal command, navigate view, or select circuit split..."
+            aria-label="Search quick commands"
+            placeholder="Type a command, pick a view, or search a legal topic..."
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -319,7 +319,7 @@ export function CommandPalette({
 
         <div className="palette-list" ref={listRef}>
           {filtered.length === 0 ? (
-            <div className="palette-empty">No legal commands match "{query}"</div>
+            <div className="palette-empty">No commands match "{query}"</div>
           ) : (
             filtered.map((cat) => (
               <div key={cat.category} className="palette-group">
@@ -353,8 +353,8 @@ export function CommandPalette({
         </div>
 
         <div className="palette-footer">
-          <span>Navigate: <kbd>↑</kbd> <kbd>↓</kbd></span>
-          <span>Execute: <kbd>↵</kbd></span>
+          <span>Move: <kbd>↑</kbd> <kbd>↓</kbd></span>
+          <span>Select: <kbd>↵</kbd></span>
           <span>Close: <kbd>Esc</kbd></span>
         </div>
       </div>
