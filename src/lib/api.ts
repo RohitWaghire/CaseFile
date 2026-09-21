@@ -35,7 +35,7 @@ export interface EnrichResponse {
     outcome?: string;
     precedents?: string[];
   }>;
-  mode: "gemini" | "disabled";
+  mode: "nebius" | "typesafe" | "disabled";
   model?: string;
   detail?: string;
 }
@@ -260,22 +260,24 @@ export type AgentEvent =
   | { type: "error"; data: { message: string } }
   | { type: "done"; data: Record<string, unknown> };
 
-export const GEMINI_KEY_STORAGE = "casefile:gemini_key";
+export const NEBIUS_KEY_STORAGE = "casefile:nebius_key";
 
-export function getStoredGeminiKey(): string {
+export function getStoredApiKey(): string {
   try {
-    return localStorage.getItem(GEMINI_KEY_STORAGE) || "";
+    return localStorage.getItem(NEBIUS_KEY_STORAGE) || localStorage.getItem("casefile:gemini_key") || "";
   } catch {
     return "";
   }
 }
 
+// Deprecated alias for backwards compatibility
+export const getStoredGeminiKey = getStoredApiKey;
 export function setStoredGeminiKey(key: string) {
   try {
     if (key.trim()) {
-      localStorage.setItem(GEMINI_KEY_STORAGE, key.trim());
+      localStorage.setItem(NEBIUS_KEY_STORAGE, key.trim());
     } else {
-      localStorage.removeItem(GEMINI_KEY_STORAGE);
+      localStorage.removeItem(NEBIUS_KEY_STORAGE);
     }
   } catch {
     // ignore
@@ -295,12 +297,11 @@ export async function streamAgentChat({
   signal?: AbortSignal;
   customApiKey?: string;
 }): Promise<void> {
-  const apiKey = customApiKey || getStoredGeminiKey();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (apiKey) {
-    headers["x-gemini-key"] = apiKey;
+  if (customApiKey) {
+    headers["x-nebius-key"] = customApiKey;
   }
 
   const response = await fetch("/api/agent/chat", {

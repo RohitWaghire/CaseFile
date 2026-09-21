@@ -208,7 +208,7 @@ export function Research({ initialQuery, onStartAgent }: ResearchProps) {
     if (!results.length || enriching || extracting) return;
     setEnriching(true);
     setError(null);
-    setStatus("Writing AI case summaries and key takeaways with Gemini 2.0...");
+    setStatus("Writing AI case summaries and key takeaways with Nebius Token Factory...");
 
     try {
       const data = await enrichCases(results);

@@ -1,3 +1,5 @@
+import { classifyLegalIntent, triageCandidateCases } from "./typesafe.js";
+
 // CourtListener base and configuration
 const CL_BASE = "https://www.courtlistener.com";
 
@@ -168,55 +170,89 @@ async function verifyCitationAgainstCourt(citationText, caseTitle = "", token = 
   }
 }
 
+function resolveModelName(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return "zai-org/GLM-5.3";
+  if (trimmed.toLowerCase().includes("glm-5.3-flash")) return "zai-org/GLM-5.3-Flash";
+  if (trimmed.toLowerCase().includes("glm-5.3")) return "zai-org/GLM-5.3";
+  if (trimmed.toLowerCase().includes("glm-5.2")) return "zai-org/GLM-5.2";
+  if (trimmed.toLowerCase().includes("glm-5.1")) return "zai-org/GLM-5.1";
+  return trimmed;
+}
+
 /**
- * Call Gemini model with automatic fallback across supported model versions
+ * Call Nebius Token Factory OpenAI-compatible chat completions endpoint with automatic model fallback
  */
-async function callGemini({ apiKey, model, systemInstruction, prompt, temperature = 0.2 }) {
+async function callNebius({
+  apiKey,
+  model,
+  systemInstruction,
+  prompt,
+  temperature = 0.2,
+  baseUrl = "https://api.tokenfactory.nebius.com/v1",
+  timeoutMs = Number(process.env.LLM_TIMEOUT_MS) || 90000,
+}) {
+  const targetModel = resolveModelName(model || process.env.NEBIUS_MODEL);
+  const configuredModel = resolveModelName(process.env.NEBIUS_MODEL);
+  const passedModel = model ? resolveModelName(model) : "";
+
   const modelsToTry = [
-    model,
-    process.env.GEMINI_MODEL,
-    "gemini-3.6-flash",
-    "gemini-flash-latest",
-    "gemini-1.5-flash",
-    "gemini-2.5-flash",
-  ].filter(Boolean);
+    targetModel,
+    configuredModel,
+    passedModel,
+    "zai-org/GLM-5.3",
+    "zai-org/GLM-5.2",
+    "deepseek-ai/DeepSeek-V4.1-Flash",
+    "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  ]
+    .filter(Boolean)
+    .map((m) => m.trim());
+
+  const uniqueModels = Array.from(new Set(modelsToTry));
 
   let lastError = null;
-  for (const candidate of modelsToTry) {
+  for (const candidate of uniqueModels) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${candidate}:generateContent?key=${apiKey}`;
-      const body = {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature,
-        },
-      };
+      const url = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
+      const messages = [];
       if (systemInstruction) {
-        body.systemInstruction = { parts: [{ text: systemInstruction }] };
+        messages.push({ role: "system", content: systemInstruction });
       }
+      messages.push({ role: "user", content: prompt });
 
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(22000),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey.trim()}`,
+        },
+        body: JSON.stringify({
+          model: candidate,
+          messages,
+          temperature,
+          response_format: { type: "json_object" },
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
       });
 
       if (!res.ok) {
         const errorBody = await res.text().catch(() => "");
-        throw new Error(`Gemini (${candidate}) error ${res.status}: ${errorBody.slice(0, 200)}`);
+        throw new Error(`Nebius (${candidate}) HTTP ${res.status}: ${errorBody.slice(0, 250)}`);
       }
 
       const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      if (text) return text;
+      let text = data?.choices?.[0]?.message?.content || "";
+      if (text) {
+        text = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+        return text;
+      }
     } catch (err) {
       lastError = err;
-      console.warn(`[agent] Model ${candidate} fallback:`, err.message);
+      console.warn(`[agent] Nebius model ${candidate} fallback:`, err.message);
     }
   }
 
-  throw lastError || new Error("All Gemini model candidates failed");
+  throw lastError || new Error("All Nebius model candidates failed");
 }
 
 /**
@@ -231,7 +267,16 @@ function sendSse(res, eventType, data) {
 /**
  * Core Autonomous ReAct Agent Loop
  */
-export async function runAgentChatStream({ req, res, clToken, defaultGeminiKey }) {
+export async function runAgentChatStream({
+  req,
+  res,
+  clToken,
+  nebiusKey,
+  nebiusModel,
+  nebiusBaseUrl = "https://api.tokenfactory.nebius.com/v1",
+  defaultGeminiKey,
+  typesafeKey,
+}) {
   // Set SSE Headers
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -241,8 +286,22 @@ export async function runAgentChatStream({ req, res, clToken, defaultGeminiKey }
   const body = req.body || {};
   const messages = Array.isArray(body.messages) ? body.messages : [];
   const latestMessage = messages[messages.length - 1]?.content || body.prompt || "";
-  const clientKey = req.headers["x-gemini-key"] || body.apiKey || "";
-  const apiKey = clientKey || defaultGeminiKey;
+  const apiKey = (
+    nebiusKey ||
+    process.env.NEBIUS_API_KEY ||
+    req.headers["x-nebius-key"] ||
+    req.headers["x-gemini-key"] ||
+    defaultGeminiKey ||
+    process.env.GOOGLE_GEMINI_KEY ||
+    ""
+  ).trim();
+  const effectiveTypeSafeKey = (
+    typesafeKey ||
+    process.env.TYPESAFE_API_KEY ||
+    req.headers["x-typesafe-key"] ||
+    ""
+  ).trim();
+  const model = resolveModelName(nebiusModel || process.env.NEBIUS_MODEL || "zai-org/GLM-5.3");
   const preferredCourt = body.court || "";
 
   if (!latestMessage.trim()) {
@@ -256,6 +315,7 @@ export async function runAgentChatStream({ req, res, clToken, defaultGeminiKey }
     message: "Starting CaseFile Research Assistant...",
     objective: latestMessage,
     hasApiKey: Boolean(apiKey),
+    typesafeAvailable: Boolean(effectiveTypeSafeKey),
   });
 
   const state = {
@@ -277,13 +337,35 @@ export async function runAgentChatStream({ req, res, clToken, defaultGeminiKey }
     let primaryQuery = latestMessage;
     let counterQuery = "";
     let inferredJurisdiction = preferredCourt;
+    let classifiedDomain = "";
+
+    // Fast System One Intent & Jurisdiction Classification via TypeSafe
+    if (effectiveTypeSafeKey) {
+      try {
+        const intent = await classifyLegalIntent(latestMessage, effectiveTypeSafeKey);
+        if (intent) {
+          classifiedDomain = intent.category;
+          if (!inferredJurisdiction && intent.jurisdiction) {
+            inferredJurisdiction = intent.jurisdiction;
+          }
+          sendSse(res, "thought", {
+            title: "TypeSafe System 1: Fast Intent & Circuit Routing",
+            detail: `Classified domain as "${intent.category}"${inferredJurisdiction ? ` with jurisdiction routed to "${inferredJurisdiction}"` : ""}. Precedent research confidence: ${Math.round(intent.actionableScore * 100)}%.`,
+            phase: "planning",
+          });
+        }
+      } catch (err) {
+        console.warn("[agent] TypeSafe intent classification fallback:", err.message);
+      }
+    }
 
     if (apiKey) {
       try {
         const planPrompt = `You are a legal research assistant. Break down this legal question into two simple search queries for court opinions:
 1) PRIMARY SEARCH: to find helpful court rulings that support our side.
 2) ADVERSE / OPPOSING SEARCH: to find rulings the other side might use against us.
-Also detect the intended court or state if mentioned (e.g. 'ca9', 'ca2', 'scotus', 'cal', or empty string for all).
+${inferredJurisdiction ? `Jurisdiction context: ${inferredJurisdiction}` : "Detect the intended court or state if mentioned (e.g. 'ca9', 'ca2', 'scotus', 'cal', or empty string for all)."}
+${classifiedDomain ? `Legal domain context: ${classifiedDomain}` : ""}
 
 Writing rule: Keep everything clear and simple at an 8th-grade reading level.
 
@@ -296,12 +378,14 @@ Return ONLY valid JSON in this shape:
   "jurisdiction": "court code or empty string",
   "reasoning": "1-2 short, simple sentences explaining your search plan"
 }`;
-        const planRaw = await callGemini({
+        const planRaw = await callNebius({
           apiKey,
+          model,
           prompt: planPrompt,
           temperature: 0.1,
+          baseUrl: nebiusBaseUrl,
         });
-        const cleaned = planRaw.replace(/```json/gi, "").replace(/```/g, "").trim();
+        const cleaned = planRaw.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```json/gi, "").replace(/```/g, "").trim();
         const parsedPlan = JSON.parse(cleaned);
         if (parsedPlan.primaryQuery) primaryQuery = parsedPlan.primaryQuery;
         if (parsedPlan.counterQuery) counterQuery = parsedPlan.counterQuery;
@@ -373,12 +457,36 @@ Return ONLY valid JSON in this shape:
 
     // Deduplicate collected cases
     const seenIds = new Set();
-    const uniqueCases = [];
+    let uniqueCases = [];
     for (const c of state.collectedCases) {
       if (!seenIds.has(c.id) && !seenIds.has(c.title)) {
         seenIds.add(c.id);
         seenIds.add(c.title);
         uniqueCases.push(c);
+      }
+    }
+
+    // Phase 3.5: Fast Parallel Case Triage via TypeSafe System One (Jev)
+    if (effectiveTypeSafeKey && uniqueCases.length > 0) {
+      sendSse(res, "thought", {
+        title: "TypeSafe System 1: Parallel Precedent Triage",
+        detail: `Evaluating ${uniqueCases.length} candidate cases with calibrated relevance scores (0-2) and stance classification.`,
+        phase: "reading",
+      });
+
+      try {
+        const triaged = await triageCandidateCases(uniqueCases, latestMessage, effectiveTypeSafeKey);
+        if (Array.isArray(triaged) && triaged.length > 0) {
+          sendSse(res, "observation", {
+            tool: "typesafe_case_triage",
+            evaluatedCount: uniqueCases.length,
+            retainedCount: triaged.length,
+            detail: `TypeSafe System 1: Filtered down to ${triaged.length} high-relevance cases with calibrated confidence and pre-classified stances.`,
+          });
+          uniqueCases = triaged;
+        }
+      } catch (err) {
+        console.warn("[agent] TypeSafe triage fallback:", err.message);
       }
     }
     state.collectedCases = uniqueCases;
@@ -390,8 +498,8 @@ Return ONLY valid JSON in this shape:
       phase: "reading",
     });
 
-    // Fetch fuller text for top 4 cases
-    for (let i = 0; i < Math.min(uniqueCases.length, 4); i++) {
+    // Fetch fuller text for top cases
+    for (let i = 0; i < Math.min(uniqueCases.length, 5); i++) {
       const full = await getOpinionFullText(uniqueCases[i], clToken);
       uniqueCases[i].opinionText = full.text;
       uniqueCases[i].textSource = full.source;
@@ -434,6 +542,7 @@ Return ONLY valid JSON in this shape:
     });
 
     if (apiKey) {
+      const hasTriagedStances = uniqueCases.some((c) => c.typesafeTriaged);
       const synthesisPrompt = `You are a helpful legal research assistant.
 Objective: "${latestMessage}"
 
@@ -443,8 +552,8 @@ ${uniqueCases
     (c, i) =>
       `[CASE ${i + 1}] Title: ${c.title}
 Court: ${c.court} | Filed: ${c.dateFiled || "unknown"} | Citation: ${c.citation?.join(", ") || "unbound"}
-Link: ${c.link}
-Text snippet: ${c.snippet}`
+Link: ${c.link}${c.typesafeTriaged ? `\nTypeSafe System 1 Pre-Triage: stance=${c.stance} (relevance=${c.relevanceScore}/2, precedent=${c.isPrecedent ? "yes" : "no"})` : ""}
+Text excerpt: ${c.opinionText ? c.opinionText.slice(0, 750) : c.snippet}`
   )
   .join("\n\n")}
 
@@ -453,6 +562,7 @@ Write in plain, simple English that an 8th grader can easily understand.
 - Use short sentences and everyday words.
 - Avoid hard legal jargon. If you must use a legal word, explain it right away in simple terms.
 - Keep explanations direct and helpful.
+${hasTriagedStances ? "- NOTE: Cases have been pre-triaged with TypeSafe System 1 calibrated stances (favorable vs adverse). Populate the two-sided table matching these stances and focus your reasoning on distinguishing strategies and plain-English IRAC brief drafting." : ""}
 
 Your task:
 1. Divide these cases into a TWO-SIDED TABLE:
@@ -503,13 +613,15 @@ Return ONLY valid JSON matching this schema:
 
       let synthesized = false;
       try {
-        const synthesisRaw = await callGemini({
+        const synthesisRaw = await callNebius({
           apiKey,
+          model,
           prompt: synthesisPrompt,
           temperature: 0.15,
+          baseUrl: nebiusBaseUrl,
         });
 
-        const cleanJson = synthesisRaw.replace(/```json/gi, "").replace(/```/g, "").trim();
+        const cleanJson = synthesisRaw.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```json/gi, "").replace(/```/g, "").trim();
         const parsedSynthesis = JSON.parse(cleanJson);
 
         state.matrix = parsedSynthesis.matrix || { favorable: [], adverse: [] };
@@ -535,8 +647,31 @@ Return ONLY valid JSON matching this schema:
     }
 
     function runFallbackSynthesis() {
-      const half = Math.ceil(uniqueCases.length / 2);
-      const favList = uniqueCases.slice(0, half).map((c) => ({
+      const favTagged = uniqueCases.filter((c) => c.stance === "favorable");
+      const advTagged = uniqueCases.filter((c) => c.stance === "adverse");
+      const neutralTagged = uniqueCases.filter((c) => c.stance !== "favorable" && c.stance !== "adverse");
+
+      let favPool = [...favTagged];
+      let advPool = [...advTagged];
+
+      if (favPool.length === 0 && advPool.length === 0) {
+        const half = Math.ceil(uniqueCases.length / 2);
+        favPool = uniqueCases.slice(0, half);
+        advPool = uniqueCases.slice(half);
+      } else {
+        neutralTagged.forEach((c, idx) => {
+          if (idx % 2 === 0) favPool.push(c);
+          else advPool.push(c);
+        });
+      }
+
+      if (advPool.length === 0 && favPool.length > 1) {
+        advPool.push(favPool.pop());
+      } else if (favPool.length === 0 && advPool.length > 1) {
+        favPool.push(advPool.pop());
+      }
+
+      const favList = favPool.map((c) => ({
         id: c.id,
         title: c.title,
         citation: c.citation?.[0] || c.court,
@@ -545,7 +680,7 @@ Return ONLY valid JSON matching this schema:
         link: c.link,
       }));
 
-      const advList = uniqueCases.slice(half).map((c) => ({
+      const advList = advPool.map((c) => ({
         id: c.id,
         title: c.title,
         citation: c.citation?.[0] || c.court,
@@ -582,7 +717,7 @@ Return ONLY valid JSON matching this schema:
       sendSse(res, "memo_ready", { memo: state.memo });
       sendSse(res, "message", {
         role: "assistant",
-        content: `I finished searching CourtListener for **"${latestMessage}"**. I reviewed **${uniqueCases.length} real court opinions**, built a **Two-Sided Case Table**, checked the citations against court records, and wrote a clear **Legal Memo** on the right.\n\n*(Tip: If you want to use your own Google AI key, click Set API Key in the top right).*`,
+        content: `I finished searching CourtListener for **"${latestMessage}"**. I reviewed **${uniqueCases.length} real court opinions**, built a **Two-Sided Case Table**, checked the citations against court records, and wrote a clear **Legal Memo** on the right.`,
         casesCount: uniqueCases.length,
       });
     }

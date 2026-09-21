@@ -16,11 +16,11 @@ export function Footer() {
           </p>
           <p>
             <a
-              href="https://lexhack-2026.devpost.com/"
+              href="https://www.courtlistener.com/"
               target="_blank"
               rel="noreferrer"
             >
-              LexHack 2026 Project
+              CourtListener Records
             </a>
           </p>
         </div>

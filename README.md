@@ -1,7 +1,7 @@
 # CaseFile AI — Smart Legal Research Assistant
 
-> **LexHack 2026 Submission**  
-> Tracks: **⚡ Legal Automation & Workflow Innovation** · **🛡️ AI Safety, Ethics & Governance** · **📜 Digital Rights**
+> **Autonomous Legal Intelligence Platform**  
+> Powered by live federal and state court records from CourtListener and high-speed LLM reasoning via Nebius Token Factory.
 
 **CaseFile AI** is an intelligent assistant that does real legal research for you. Instead of acting like a basic search box or a chatbot that makes up answers, CaseFile AI works step-by-step using real court records from [CourtListener](https://www.courtlistener.com/) (Free Law Project):
 
@@ -27,7 +27,7 @@
 │   │  • Multi-turn chat input      │     │  • Adversarial Matrix         │   │
 │   │  • Live ReAct Thought Stream  │◄───►│  • IRAC Legal Memo            │   │
 │   │  • Pause / Steer / Resume     │     │  • Inline Guardrail Badges    │   │
-│   │  • BYOK Settings Drawer       │     │  • MD / PDF / JSON Export     │   │
+│   │  • Quick Scenario Starters    │     │  • MD / PDF / JSON Export     │   │
 │   └───────────────┬───────────────┘     └───────────────┬───────────────┘   │
 └───────────────────┼─────────────────────────────────────┼───────────────────┘
                     │                                     │
@@ -36,12 +36,12 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      Express Backend (server/agent.js)                      │
 │                                                                             │
-│   • ReAct Agent Loop with Gemini 2.0 / Flash (Function Calling / Reasoning) │
+│   • ReAct Agent Loop with Nebius Token Factory (Llama 3.1 / DeepSeek / Qwen)│
 │   • Tool: CourtListener Search (filtered by circuit, court, published)      │
 │   • Tool: Full Opinion Text Extractor (SSRF-safe, binary sniffing)          │
 │   • Tool: Citation Verification Engine (validates against cluster IDs)      │
 │   • Tool: Adversarial Matrix Classifier & IRAC Synthesizer                  │
-│   • Dual-Key Resolver (req.headers['x-gemini-key'] || env.GOOGLE_GEMINI_KEY)│
+│   • Server Key Provider (env.NEBIUS_API_KEY with auto model fallback)       │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -62,20 +62,20 @@ npm run dev
 
 ---
 
-## API Keys & Authentication (Dual Mode)
+## API Keys & Authentication
 
-CaseFile AI supports **Dual-Mode Authentication**:
+CaseFile AI uses **server-side authentication** powered by [Nebius Token Factory](https://docs.tokenfactory.nebius.com/quickstart). Users can interact with the research studio immediately without being prompted for API keys.
 
-1. **Server Environment Variable**:
+1. **Configure Server Environment Variable**:
    ```bash
    # Windows PowerShell
-   $env:GOOGLE_GEMINI_KEY="your-gemini-key"
+   $env:NEBIUS_API_KEY="your-nebius-token-factory-key"
    $env:COURTLISTENER_TOKEN="your-cl-token" # optional for full text
    npm run dev
    ```
-2. **Bring-Your-Own-Key (BYOK) in the UI**:
-   - Hackathon judges and testers can simply click the **Set API Key** button in the top-right of the Agent Studio and paste their personal Gemini API key. It is saved directly in browser `localStorage` and sent via `x-gemini-key`.
-   - Free Gemini keys can be generated in seconds at [Google AI Studio](https://aistudio.google.com/apikey).
+2. **Model Selection**:
+   - Default: `meta-llama/Meta-Llama-3.1-70B-Instruct`
+   - Configurable via `NEBIUS_MODEL` in `.env` (e.g. `meta-llama/Meta-Llama-3.1-8B-Instruct-fast`, `deepseek-ai/DeepSeek-V3-0324`).
 
 ---
 
@@ -86,8 +86,8 @@ CaseFile AI supports **Dual-Mode Authentication**:
 | `/api/agent/chat` | `POST` | Primary Server-Sent Events (SSE) streaming endpoint driving the autonomous ReAct agent loop. |
 | `/api/search?q=…` | `GET` | Search published CourtListener opinions with snippet extraction. |
 | `/api/extract` | `POST` | SSRF-safe batch extraction of full opinion text. |
-| `/api/enrich` | `POST` | Multi-field structured LLM extraction. |
-| `/api/health` | `GET` | Reports service status, CourtListener token, and Gemini key availability. |
+| `/api/enrich` | `POST` | Multi-field structured LLM extraction via Nebius Token Factory. |
+| `/api/health` | `GET` | Reports service status, CourtListener token, and Nebius key availability. |
 
 ---
 
@@ -95,4 +95,4 @@ CaseFile AI supports **Dual-Mode Authentication**:
 
 - **Frontend**: React 19, TypeScript, Vite 7, Vanilla CSS design system, Motion, GSAP, Phosphor Icons.
 - **Backend**: Node.js, Express 5, Server-Sent Events (SSE), SSRF guardrail with IP pinning.
-- **Data & AI**: CourtListener REST API v4, Google Gemini 2.0 Flash (`gemini-2.0-flash`).
+- **Data & AI**: CourtListener REST API v4, Nebius Token Factory OpenAI-compatible API (`https://api.tokenfactory.nebius.com/v1`).

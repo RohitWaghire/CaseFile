@@ -13,7 +13,6 @@ import {
   Copy,
   Printer,
   DownloadSimple,
-  Key,
   X,
   Plus,
   Trash,
@@ -31,8 +30,6 @@ import { DoctrineTimeline } from "./DoctrineTimeline";
 import { CommandPalette } from "./CommandPalette";
 import {
   streamAgentChat,
-  getStoredGeminiKey,
-  setStoredGeminiKey,
   downloadJson,
   slugifyQuery,
 } from "../lib/api";
@@ -177,10 +174,6 @@ export function AgentStudio({
     }));
   };
 
-  // Settings Modal State
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState(getStoredGeminiKey());
-  const [apiKeySaved, setApiKeySaved] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
@@ -198,24 +191,7 @@ export function AgentStudio({
   }, [onOpenCommandPalette]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
-  const chatBottomRef = useRef<HTMLDivElement>(null);
-  const settingsModalRef = useRef<HTMLDivElement>(null);
-  const settingsPreviouslyFocusedRef = useRef<HTMLElement | null>(null);
-
-  // Settings modal: Escape to close + focus restore on close
-  useEffect(() => {
-    if (!settingsOpen) return;
-    settingsPreviouslyFocusedRef.current = document.activeElement as HTMLElement | null;
-    settingsModalRef.current?.focus();
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setSettingsOpen(false);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      settingsPreviouslyFocusedRef.current?.focus?.();
-    };
-  }, [settingsOpen]);
+  const chatStreamRef = useRef<HTMLDivElement>(null);
 
   // Sync sessions to localStorage
   useEffect(() => {
@@ -226,9 +202,14 @@ export function AgentStudio({
     }
   }, [sessions]);
 
-  // Scroll chat to bottom
+  // Scroll chat to bottom strictly within the chatStream container (prevents window scrolling)
   useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (chatStreamRef.current) {
+      chatStreamRef.current.scrollTo({
+        top: chatStreamRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
   }, [activeSession.messages, activeSession.thoughts, activeSession.actions]);
 
   // Helper to update active session
@@ -420,12 +401,6 @@ export function AgentStudio({
     setCurrentPhase("Research stopped");
   }
 
-  function handleSaveApiKey() {
-    setStoredGeminiKey(apiKeyInput);
-    setApiKeySaved(true);
-    setTimeout(() => setApiKeySaved(false), 2000);
-  }
-
   function copyMemoMarkdown() {
     if (!activeSession.memo) return;
     const m = activeSession.memo;
@@ -455,69 +430,6 @@ export function AgentStudio({
 
   return (
     <div className="agent-studio">
-      {/* Settings Modal (BYOK Key) */}
-      {settingsOpen && (
-        <div className="modal-backdrop" onClick={() => setSettingsOpen(false)}>
-          <div
-            ref={settingsModalRef}
-            className="modal settings-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="API and AI model settings"
-            tabIndex={-1}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="modal-head">
-              <h2>
-                <Key size={18} /> API & AI Model Settings
-              </h2>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setSettingsOpen(false)}
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <div className="modal-body">
-              <p className="settings-desc">
-                CaseFile AI connects to CourtListener's public court record database and Google Gemini 2.0.
-                You can enter your own free Gemini API key below. It stays safely saved only inside your browser:
-              </p>
-              <div className="form-group">
-                <label htmlFor="gemini-key-input">Google Gemini API Key</label>
-                <input
-                  id="gemini-key-input"
-                  type="password"
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  placeholder="AIzaSy..."
-                />
-              </div>
-              <p className="settings-hint">
-                Don't have a key? Get a free API key at{" "}
-                <a
-                  href="https://aistudio.google.com/apikey"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Google AI Studio <ArrowSquareOut size={12} />
-                </a>.
-              </p>
-            </div>
-            <div className="modal-foot">
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleSaveApiKey}
-              >
-                {apiKeySaved ? "Key Saved!" : "Save Key"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Fallback Command Palette if not provided by root */}
       {!onOpenCommandPalette && (
         <CommandPalette
@@ -594,16 +506,6 @@ export function AgentStudio({
                 <span className="btn-label-desktop">Commands</span>
                 <kbd className="cmd-k-kbd">⌘K</kbd>
               </button>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm settings-toggle"
-                onClick={() => setSettingsOpen(true)}
-                title="Set Your API Key"
-              >
-                <Key size={14} />
-                {getStoredGeminiKey() ? "Custom Key Active" : "Set API Key"}
-              </button>
             </div>
           </div>
 
@@ -634,7 +536,7 @@ export function AgentStudio({
           )}
 
           {/* Active Conversation & ReAct Cognitive Stream */}
-          <div className="chat-stream">
+          <div className="chat-stream" ref={chatStreamRef}>
             {activeSession.messages.map((msg) => (
               <div key={msg.id} className={`chat-bubble ${msg.role}`}>
                 <div className="bubble-header">
@@ -705,7 +607,6 @@ export function AgentStudio({
               </div>
             )}
 
-            <div ref={chatBottomRef} />
           </div>
 
           {/* Interactive Chat Input & Steering Bar */}
@@ -886,30 +787,33 @@ export function AgentStudio({
             <div className="canvas-actions">
               <button
                 type="button"
-                className="btn btn-secondary btn-sm"
+                className="btn btn-secondary btn-sm canvas-action-btn"
                 onClick={copyMemoMarkdown}
                 disabled={!activeSession.memo}
                 title="Copy Memorandum as Text"
               >
-                <Copy size={14} /> {copySuccess ? "Copied" : "Copy Text"}
+                <Copy size={14} />
+                <span className="action-btn-label">{copySuccess ? "Copied" : "Copy Text"}</span>
               </button>
               <button
                 type="button"
-                className="btn btn-secondary btn-sm"
+                className="btn btn-secondary btn-sm canvas-action-btn"
                 onClick={handlePrintMemo}
                 disabled={!activeSession.memo}
                 title="Print Formatted Legal Brief"
               >
-                <Printer size={14} /> Print / PDF
+                <Printer size={14} />
+                <span className="action-btn-label">Print / PDF</span>
               </button>
               <button
                 type="button"
-                className="btn btn-secondary btn-sm"
+                className="btn btn-secondary btn-sm canvas-action-btn"
                 onClick={handleDownloadJson}
                 disabled={activeSession.messages.length === 0}
                 title="Download JSON Research Data"
               >
-                <DownloadSimple size={14} /> Export Data
+                <DownloadSimple size={14} />
+                <span className="action-btn-label">Export Data</span>
               </button>
             </div>
           </div>

@@ -130,7 +130,7 @@ export function Landing({ onStartResearch, onStartAgent }: LandingProps) {
             transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
           >
             <div className="hero-badge">
-              <Sparkle size={14} weight="fill" /> LexHack 2026 AI Project
+              <Sparkle size={14} weight="fill" /> Autonomous Legal Intelligence
             </div>
 
             <h1 id="hero-title" className="hero-title">
@@ -223,7 +223,7 @@ export function Landing({ onStartResearch, onStartAgent }: LandingProps) {
               />
               <div className="hero-badge-overlay">
                 <span className="live-pulse" />
-                <span className="overlay-text">Active Legal Research Engine • LexHack 2026</span>
+                <span className="overlay-text">Active Legal Research Engine • CourtListener Live</span>
               </div>
             </div>
           </motion.div>

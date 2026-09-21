@@ -8,6 +8,7 @@ import dns from "dns/promises";
 import { fileURLToPath } from "url";
 import rateLimit from "express-rate-limit";
 import { runAgentChatStream } from "./agent.js";
+import { enrichOpinionOutcome } from "./typesafe.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -16,9 +17,21 @@ const CL_BASE = "https://www.courtlistener.com";
 const TOKEN = process.env.COURTLISTENER_TOKEN || process.env.CL_TOKEN || "";
 const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || process.env.CASEFILE_PASSWORD || "";
 
-// Optional LLM enrichment (mirrors the n8n Google Gemini extraction node).
-const GEMINI_KEY = process.env.GOOGLE_GEMINI_KEY || process.env.GEMINI_API_KEY || "";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
+// Optional LLM inference via Nebius Token Factory (OpenAI-compatible)
+function resolveModelName(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return "zai-org/GLM-5.3";
+  if (trimmed.toLowerCase().includes("glm-5.3-flash")) return "zai-org/GLM-5.3-Flash";
+  if (trimmed.toLowerCase().includes("glm-5.3")) return "zai-org/GLM-5.3";
+  if (trimmed.toLowerCase().includes("glm-5.2")) return "zai-org/GLM-5.2";
+  if (trimmed.toLowerCase().includes("glm-5.1")) return "zai-org/GLM-5.1";
+  return trimmed;
+}
+
+const NEBIUS_KEY = process.env.NEBIUS_API_KEY || process.env.GOOGLE_GEMINI_KEY || "";
+const NEBIUS_MODEL = resolveModelName(process.env.NEBIUS_MODEL || "zai-org/GLM-5.3");
+const NEBIUS_BASE_URL = process.env.NEBIUS_BASE_URL || "https://api.tokenfactory.nebius.com/v1";
+const TYPESAFE_API_KEY = (process.env.TYPESAFE_API_KEY || "").trim();
 
 // Optional shared-password gate for a private/pre-launch deploy. When set, every
 
@@ -418,52 +431,121 @@ const ENRICH_SCHEMA = {
   precedents: "array of cited case names, [] if none",
 };
 
-// Best-effort structured extraction over the opinion text. Returns null when no
+// Best-effort structured extraction over the opinion text using TypeSafe AI and/or Nebius Token Factory. Returns null when no
 // key is configured or the call fails, so enrichment never breaks a request.
-async function enrichWithLlm(caseItem) {
+export async function enrichWithLlm(caseItem) {
   const text = caseItem.opinionText || caseItem.snippet || "";
-  if (!GEMINI_KEY || !text) return null;
+  if (!text) return null;
 
-  const prompt =
-    `You are an expert legal-case data extractor. Return ONLY JSON matching this shape ` +
-    `(values describe each field): ${JSON.stringify(ENRICH_SCHEMA)}.\n\n` +
+  // Leverage TypeSafe System One for sub-100ms calibrated outcome extraction if available
+  const activeTypeSafeKey = process.env.TYPESAFE_API_KEY || TYPESAFE_API_KEY;
+  const activeNebiusKey = process.env.NEBIUS_API_KEY || NEBIUS_KEY;
+
+  let typeSafeOutcome = null;
+  if (activeTypeSafeKey) {
+    try {
+      const outcomeRes = await enrichOpinionOutcome(text, activeTypeSafeKey);
+      if (outcomeRes?.outcome && outcomeRes.outcome !== "unknown") {
+        typeSafeOutcome = outcomeRes.outcome;
+      }
+    } catch (err) {
+      console.warn("[enrich] TypeSafe outcome enrichment fallback:", err.message);
+    }
+  }
+
+  if (!activeNebiusKey) {
+    if (typeSafeOutcome) {
+      return {
+        summary: caseItem.snippet ? `${cleanText(caseItem.snippet).slice(0, 220)}...` : `Disposition: ${typeSafeOutcome}`,
+        court: caseItem.court || "",
+        jurisdiction: "",
+        outcome: typeSafeOutcome,
+        precedents: [],
+      };
+    }
+    return null;
+  }
+
+  const systemInstruction =
+    "You are an expert legal-case data extractor. Return ONLY valid JSON matching this schema: " +
+    JSON.stringify(ENRICH_SCHEMA) +
+    ". Do not include extra text, explanations, or code fencing.";
+
+  const userPrompt =
     `Case: ${caseItem.Title || "Untitled"}\nCourt (hint): ${caseItem.court || "unknown"}\n\n` +
     `Opinion text:\n${text.slice(0, 24000)}`;
 
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
-        }),
-        signal: AbortSignal.timeout(20000),
-      }
-    );
+    const activeModel = resolveModelName(process.env.NEBIUS_MODEL || NEBIUS_MODEL);
+    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS) || 60000;
+    const res = await fetch(`${NEBIUS_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${activeNebiusKey}`,
+      },
+      body: JSON.stringify({
+        model: activeModel,
+        messages: [
+          { role: "system", content: systemInstruction },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      console.error(`[enrich] Gemini HTTP ${res.status}: ${body.slice(0, 300)}`);
+      console.error(`[enrich] Nebius HTTP ${res.status}: ${body.slice(0, 300)}`);
+      if (typeSafeOutcome) {
+        return {
+          summary: "",
+          court: caseItem.court || "",
+          jurisdiction: "",
+          outcome: typeSafeOutcome,
+          precedents: [],
+        };
+      }
       return null;
     }
+
     const data = await res.json();
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    let raw = data?.choices?.[0]?.message?.content || "";
     if (!raw) {
       console.error(`[enrich] Empty response: ${JSON.stringify(data).slice(0, 300)}`);
+      if (typeSafeOutcome) {
+        return {
+          summary: "",
+          court: caseItem.court || "",
+          jurisdiction: "",
+          outcome: typeSafeOutcome,
+          precedents: [],
+        };
+      }
       return null;
     }
+    raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```json/gi, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(raw);
     return {
       summary: typeof parsed.summary === "string" ? parsed.summary : "",
       court: typeof parsed.court === "string" ? parsed.court : "",
       jurisdiction: typeof parsed.jurisdiction === "string" ? parsed.jurisdiction : "",
-      outcome: typeof parsed.outcome === "string" ? parsed.outcome : "",
+      outcome: typeSafeOutcome || (typeof parsed.outcome === "string" ? parsed.outcome : ""),
       precedents: Array.isArray(parsed.precedents) ? parsed.precedents.map(String) : [],
     };
   } catch (e) {
     console.error(`[enrich] ${e.name}: ${e.message}`);
+    if (typeSafeOutcome) {
+      return {
+        summary: "",
+        court: caseItem.court || "",
+        jurisdiction: "",
+        outcome: typeSafeOutcome,
+        precedents: [],
+      };
+    }
     return null;
   }
 }
@@ -473,7 +555,10 @@ app.get("/api/health", (_req, res) => {
     ok: true,
     service: "CaseFile",
     courtlistenerToken: Boolean(TOKEN),
-    llmEnrichment: Boolean(GEMINI_KEY),
+    nebiusToken: Boolean(NEBIUS_KEY),
+    typesafeAvailable: Boolean(TYPESAFE_API_KEY),
+    llmEnrichment: Boolean(NEBIUS_KEY || TYPESAFE_API_KEY),
+    model: NEBIUS_MODEL,
   });
 });
 
@@ -582,12 +667,12 @@ app.post("/api/enrich", costlyLimiter, async (req, res) => {
     if (!cases.length) {
       return res.status(400).json({ error: "Please choose at least one case." });
     }
-    if (!GEMINI_KEY) {
+    if (!NEBIUS_KEY && !TYPESAFE_API_KEY) {
       return res.json({
         count: 0,
         cases: [],
         mode: "disabled",
-        detail: "Add a Google AI key to turn on AI summaries.",
+        detail: "Configure NEBIUS_API_KEY or TYPESAFE_API_KEY on the server to turn on AI summaries.",
       });
     }
 
@@ -600,7 +685,9 @@ app.post("/api/enrich", costlyLimiter, async (req, res) => {
       if (i < limit - 1) await new Promise((r) => setTimeout(r, 500));
     }
 
-    res.json({ count: enriched.length, cases: enriched, mode: "gemini", model: GEMINI_MODEL });
+    const mode = NEBIUS_KEY ? "nebius" : "typesafe";
+    const model = NEBIUS_KEY ? NEBIUS_MODEL : "jev-latest";
+    res.json({ count: enriched.length, cases: enriched, mode, model });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not create AI summaries", detail: String(err.message || err) });
@@ -641,7 +728,10 @@ app.post("/api/agent/chat", async (req, res) => {
       req,
       res,
       clToken: TOKEN,
-      defaultGeminiKey: GEMINI_KEY,
+      nebiusKey: NEBIUS_KEY,
+      nebiusModel: NEBIUS_MODEL,
+      nebiusBaseUrl: NEBIUS_BASE_URL,
+      typesafeKey: TYPESAFE_API_KEY,
     });
   } catch (err) {
     console.error("[agent] Unhandled chat stream error:", err);
@@ -661,12 +751,20 @@ app.use((req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`CaseFile API on http://localhost:${PORT}`);
-  console.log(`CourtListener token: ${TOKEN ? "configured" : "not set (search + snippets)"}`);
-  console.log(`LLM enrichment: ${GEMINI_KEY ? `${GEMINI_MODEL}` : "off (set GOOGLE_GEMINI_KEY)"}`);
-  console.log(`Access gate: ${ACCESS_PASSWORD ? "ON (password required)" : "off (public)"}`);
-  console.log(
-    `Rate limits: ${apiLimiter.max ?? "?"}/15m api, ${costlyLimiter.max ?? "?"}/60m extract+enrich`
-  );
-});
+const isTestMode =
+  process.env.NODE_ENV === "test" ||
+  process.env.npm_lifecycle_event === "test" ||
+  Boolean(process.env.TEST_ENV);
+
+if (!isTestMode) {
+  app.listen(PORT, () => {
+    console.log(`CaseFile API on http://localhost:${PORT}`);
+    console.log(`CourtListener token: ${TOKEN ? "configured" : "not set (search + snippets)"}`);
+    console.log(`LLM inference: ${NEBIUS_KEY ? `Nebius (${NEBIUS_MODEL})` : "off (set NEBIUS_API_KEY)"}`);
+    console.log(`TypeSafe System One: ${TYPESAFE_API_KEY ? "ready (jev-latest)" : "not configured (optional)"}`);
+    console.log(`Access gate: ${ACCESS_PASSWORD ? "ON (password required)" : "off (public)"}`);
+    console.log(
+      `Rate limits: ${apiLimiter.max ?? "?"}/15m api, ${costlyLimiter.max ?? "?"}/60m extract+enrich`
+    );
+  });
+}

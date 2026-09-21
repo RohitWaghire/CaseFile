@@ -14,29 +14,31 @@ Set these on your host (never commit real values — `.env` is git-ignored).
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `GOOGLE_GEMINI_KEY` | for Enrich | Google Gemini key. **You are billed for this** — see cost note below. |
-| `GEMINI_MODEL` | no | Defaults to `gemini-flash-latest`. |
+| `NEBIUS_API_KEY` | for AI Agent & Enrich | Nebius Token Factory API key. Powers deep generative synthesis & IRAC legal memos. |
+| `NEBIUS_MODEL` | no | Defaults to `zai-org/GLM-5.3` (or `zai-org/GLM-5.3-Flash` for faster inference). |
+| `TYPESAFE_API_KEY` | recommended | TypeSafe AI API key (`jev-latest`). Sub-100ms intent routing & adversarial candidate triage. |
+| `LLM_TIMEOUT_MS` | no | Millisecond timeout for LLM synthesis (default `90000`). |
 | `COURTLISTENER_TOKEN` | no | Full opinion text from CourtListener's authenticated API. |
 | `CASEFILE_ACCESS_PASSWORD` | recommended for pre-launch | Locks the API behind a shared password. Testers are prompted once. |
 | `RATE_LIMIT_API` | no | Requests / 15 min / IP (default `120`). |
 | `RATE_LIMIT_COSTLY` | no | Extract+Enrich calls / hour / IP (default `30`). |
-| `TRUST_PROXY` | recommended behind a proxy | Trust `X-Forwarded-For` so rate limits key on the real client IP. Set to the number of proxies in front of the app (e.g. `1` on Render/Railway/Fly). Leave unset when the app is directly internet-facing — trusting the header there lets clients spoof it and bypass rate limits. |
-| `MAX_DOWNLOAD_BYTES` | no | Hard ceiling on a single court-download fetch (default `2000000` = 2 MB). Responses larger than this are aborted mid-stream so a hostile endpoint can't exhaust memory. |
-| `DOWNLOAD_TIMEOUT_MS` | no | Absolute wall-clock budget for one download — DNS, connect, all redirects, and body (default `10000`). Enforced even if the peer trickles bytes to defeat an idle timeout. |
-| `MAX_DELIVER_BATCH` | no | Max records one `/api/deliver` call may fan out to webhook/disk sinks (default `25`). Extras are reported as `skipped`. |
-| `PORT` | no | Hosts set this automatically. |
+| `TRUST_PROXY` | recommended behind a proxy | Trust `X-Forwarded-For` so rate limits key on the real client IP. Set to `1` on Render/Railway/Fly. |
+| `MAX_DOWNLOAD_BYTES` | no | Hard ceiling on single court-download fetch (default `2000000` = 2 MB). |
+| `DOWNLOAD_TIMEOUT_MS` | no | Timeout for court downloads in ms (default `10000`). |
+| `MAX_DELIVER_BATCH` | no | Max records one `/api/deliver` call may fan out (default `25`). |
+| `PORT` | no | Hosts inject this automatically (default `8787`). |
 
 ## ⚠️ Cost protection (read before going public)
 
-Because **you** pay for the Gemini key, the `/api/enrich` and `/api/extract` endpoints
-spend real money on every call. Two guards ship enabled:
+Because **you** pay for the LLM token consumption on your server key, the `/api/enrich` and `/api/extract` endpoints
+spend compute budget on every call. Two guards ship enabled:
 
 - **Rate limiting** — per-IP caps on the costly endpoints (tune with the env vars above).
 - **Access gate** — set `CASEFILE_ACCESS_PASSWORD` to keep the instance private until
   billing exists. Strongly recommended for the first deploy.
 
 Do **not** expose this publicly without either a low `RATE_LIMIT_COSTLY` or the access
-password, or a stranger can run up your Gemini bill.
+password, or a stranger can run up your Nebius token bill.
 
 ## Option A — Render (git-based, recommended)
 
@@ -56,7 +58,7 @@ A [Dockerfile](Dockerfile) is included (multi-stage: build then run).
 ```bash
 docker build -t casefile .
 docker run -p 8787:8787 \
-  -e GOOGLE_GEMINI_KEY=your-key \
+  -e NEBIUS_API_KEY=your-key \
   -e CASEFILE_ACCESS_PASSWORD=choose-one \
   casefile
 # open http://localhost:8787

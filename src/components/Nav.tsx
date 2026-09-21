@@ -1,5 +1,5 @@
 import type { View } from "../App";
-import { Sparkle, ShieldCheck, ArrowSquareOut, MagnifyingGlass } from "@phosphor-icons/react";
+import { Sparkle, MagnifyingGlass } from "@phosphor-icons/react";
 
 interface NavProps {
   view: View;
@@ -25,7 +25,7 @@ export function Nav({ view, onNavigate, onOpenCommandBar }: NavProps) {
             e.preventDefault();
             onNavigate("home");
           }}
-          title="CaseFile AI — LexHack 2026"
+          title="CaseFile AI"
         >
           <span className="brand-mark" aria-hidden>
             CF
@@ -38,34 +38,38 @@ export function Nav({ view, onNavigate, onOpenCommandBar }: NavProps) {
         <span className="workbench-crumb">{crumb}</span>
       </div>
 
-      <nav className="workbench-nav-center" aria-label="View switcher">
-        <div className="segmented-control">
+      <div className="workbench-nav-center">
+        <div className="segmented-control" role="tablist">
           <button
             type="button"
+            role="tab"
+            aria-selected={view === "home"}
             className={`seg-btn ${view === "home" ? "active" : ""}`}
-            aria-current={view === "home" ? "page" : undefined}
             onClick={() => onNavigate("home")}
           >
             Overview
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={view === "agent"}
             className={`seg-btn ${view === "agent" ? "active" : ""}`}
-            aria-current={view === "agent" ? "page" : undefined}
             onClick={() => onNavigate("agent")}
           >
-            <Sparkle size={13} weight="fill" /> AI Legal Studio
+            <Sparkle size={13} weight={view === "agent" ? "fill" : "regular"} />
+            AI Legal Studio
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={view === "research"}
             className={`seg-btn ${view === "research" ? "active" : ""}`}
-            aria-current={view === "research" ? "page" : undefined}
             onClick={() => onNavigate("research")}
           >
             Case Search
           </button>
         </div>
-      </nav>
+      </div>
 
       <div className="workbench-nav-right">
         {onOpenCommandBar && (
@@ -84,15 +88,6 @@ export function Nav({ view, onNavigate, onOpenCommandBar }: NavProps) {
           <span className="engine-dot" />
           <span className="engine-label">Real Court Records Live</span>
         </div>
-        <a
-          href="https://lexhack-2026.devpost.com/"
-          target="_blank"
-          rel="noreferrer"
-          className="lexhack-badge"
-          title="LexHack 2026 Project Entry"
-        >
-          <ShieldCheck size={14} /> LexHack 2026 <ArrowSquareOut size={11} />
-        </a>
       </div>
     </header>
   );
