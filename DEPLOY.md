@@ -46,9 +46,10 @@ password, or a stranger can run up your Nebius token bill.
 2. On [render.com](https://render.com): **New → Web Service** → connect the repo.
 3. Settings:
    - **Root Directory:** the folder containing this file (if the repo root is elsewhere).
-   - **Build Command:** `npm ci && npm run build`
+   - **Build Command:** `npm ci --include=dev && npm run build`
    - **Start Command:** `npm start`
 4. Add the environment variables from the table above.
+   *(Note: `--include=dev` ensures Vite is installed even when `NODE_ENV=production` is set).*
 5. Deploy. Render gives you an HTTPS URL and sets `PORT` for you.
 
 ## Option B — Docker (Railway, Fly.io, Cloud Run, any VPS)
