@@ -15,7 +15,7 @@ Set these on your host (never commit real values — `.env` is git-ignored).
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `NEBIUS_API_KEY` | for AI Agent & Enrich | Nebius Token Factory API key. Powers deep generative synthesis & IRAC legal memos. |
-| `NEBIUS_MODEL` | no | Defaults to `zai-org/GLM-5.3` (or `zai-org/GLM-5.3-Flash` for faster inference). |
+| `NEBIUS_MODEL` | no | Defaults to `deepseek-ai/DeepSeek-V4.1-Flash` for sub-12s response times. |
 | `TYPESAFE_API_KEY` | recommended | TypeSafe AI API key (`jev-latest`). Sub-100ms intent routing & adversarial candidate triage. |
 | `LLM_TIMEOUT_MS` | no | Millisecond timeout for LLM synthesis (default `90000`). |
 | `COURTLISTENER_TOKEN` | no | Full opinion text from CourtListener's authenticated API. |
