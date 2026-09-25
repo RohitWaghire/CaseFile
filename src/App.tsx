@@ -14,7 +14,7 @@ const Research = lazy(() =>
 export type View = "home" | "agent" | "research";
 
 export default function App() {
-  const [view, setView] = useState<View>("agent");
+  const [view, setView] = useState<View>("home");
   const [seedQuery, setSeedQuery] = useState("IT laws for cyber crime");
   const [agentPrompt, setAgentPrompt] = useState("");
   const [agentCourt, setAgentCourt] = useState("");

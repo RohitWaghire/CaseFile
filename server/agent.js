@@ -172,7 +172,8 @@ async function verifyCitationAgainstCourt(citationText, caseTitle = "", token = 
 
 function resolveModelName(name) {
   const trimmed = (name || "").trim();
-  if (!trimmed) return "zai-org/GLM-5.3";
+  if (!trimmed) return "deepseek-ai/DeepSeek-V4.1-Flash";
+  if (trimmed.toLowerCase().includes("deepseek")) return "deepseek-ai/DeepSeek-V4.1-Flash";
   if (trimmed.toLowerCase().includes("glm-5.3-flash")) return "zai-org/GLM-5.3-Flash";
   if (trimmed.toLowerCase().includes("glm-5.3")) return "zai-org/GLM-5.3";
   if (trimmed.toLowerCase().includes("glm-5.2")) return "zai-org/GLM-5.2";
@@ -200,10 +201,10 @@ async function callNebius({
     targetModel,
     configuredModel,
     passedModel,
-    "zai-org/GLM-5.3",
-    "zai-org/GLM-5.2",
     "deepseek-ai/DeepSeek-V4.1-Flash",
     "Qwen/Qwen3-30B-A3B-Instruct-2507",
+    "zai-org/GLM-5.3-Flash",
+    "zai-org/GLM-5.3",
   ]
     .filter(Boolean)
     .map((m) => m.trim());
@@ -231,6 +232,7 @@ async function callNebius({
           messages,
           temperature,
           response_format: { type: "json_object" },
+          max_tokens: 4096,
         }),
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -301,7 +303,7 @@ export async function runAgentChatStream({
     req.headers["x-typesafe-key"] ||
     ""
   ).trim();
-  const model = resolveModelName(nebiusModel || process.env.NEBIUS_MODEL || "zai-org/GLM-5.3");
+  const model = resolveModelName(nebiusModel || process.env.NEBIUS_MODEL || "deepseek-ai/DeepSeek-V4.1-Flash");
   const preferredCourt = body.court || "";
 
   if (!latestMessage.trim()) {
@@ -498,12 +500,14 @@ Return ONLY valid JSON in this shape:
       phase: "reading",
     });
 
-    // Fetch fuller text for top cases
-    for (let i = 0; i < Math.min(uniqueCases.length, 5); i++) {
-      const full = await getOpinionFullText(uniqueCases[i], clToken);
-      uniqueCases[i].opinionText = full.text;
-      uniqueCases[i].textSource = full.source;
-    }
+    // Fetch fuller text for top cases in parallel
+    await Promise.all(
+      uniqueCases.slice(0, 5).map(async (c) => {
+        const full = await getOpinionFullText(c, clToken);
+        c.opinionText = full.text;
+        c.textSource = full.source;
+      })
+    );
 
     // Phase 5: Anti-Hallucination Citation Verification
     sendSse(res, "thought", {
@@ -512,22 +516,37 @@ Return ONLY valid JSON in this shape:
       phase: "verifying",
     });
 
-    const verifiedCitations = [];
-    for (const c of uniqueCases.slice(0, 6)) {
-      const citeStr = c.citation?.[0] || "";
-      const verification = await verifyCitationAgainstCourt(citeStr, c.title, clToken);
-      verifiedCitations.push({
-        id: c.id,
-        caseTitle: c.title,
-        citation: citeStr || `${c.court} (${c.dateFiled?.slice(0, 4) || "n.d."})`,
-        court: c.court,
-        dateFiled: c.dateFiled,
-        docketNumber: c.docketNumber,
-        link: c.link,
-        status: verification.status || "verified",
-        confidence: verification.confidence || 0.95,
-      });
-    }
+    const verifiedCitations = await Promise.all(
+      uniqueCases.slice(0, 6).map(async (c) => {
+        const citeStr = c.citation?.[0] || "";
+        // If case already came with verified courtlistener cluster/opinion id and link, it is verified
+        if (c.clusterId || c.opinionId) {
+          return {
+            id: c.id,
+            caseTitle: c.title,
+            citation: citeStr || `${c.court} (${c.dateFiled?.slice(0, 4) || "n.d."})`,
+            court: c.court,
+            dateFiled: c.dateFiled,
+            docketNumber: c.docketNumber,
+            link: c.link,
+            status: "verified",
+            confidence: 0.98,
+          };
+        }
+        const verification = await verifyCitationAgainstCourt(citeStr, c.title, clToken);
+        return {
+          id: c.id,
+          caseTitle: c.title,
+          citation: citeStr || `${c.court} (${c.dateFiled?.slice(0, 4) || "n.d."})`,
+          court: c.court,
+          dateFiled: c.dateFiled,
+          docketNumber: c.docketNumber,
+          link: c.link,
+          status: verification.status || "verified",
+          confidence: verification.confidence || 0.95,
+        };
+      })
+    );
     state.citations = verifiedCitations;
 
     sendSse(res, "citations_verified", {

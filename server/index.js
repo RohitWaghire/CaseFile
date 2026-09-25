@@ -20,7 +20,8 @@ const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || process.env.CASEFILE_PASS
 // Optional LLM inference via Nebius Token Factory (OpenAI-compatible)
 function resolveModelName(name) {
   const trimmed = (name || "").trim();
-  if (!trimmed) return "zai-org/GLM-5.3";
+  if (!trimmed) return "deepseek-ai/DeepSeek-V4.1-Flash";
+  if (trimmed.toLowerCase().includes("deepseek")) return "deepseek-ai/DeepSeek-V4.1-Flash";
   if (trimmed.toLowerCase().includes("glm-5.3-flash")) return "zai-org/GLM-5.3-Flash";
   if (trimmed.toLowerCase().includes("glm-5.3")) return "zai-org/GLM-5.3";
   if (trimmed.toLowerCase().includes("glm-5.2")) return "zai-org/GLM-5.2";
@@ -29,7 +30,7 @@ function resolveModelName(name) {
 }
 
 const NEBIUS_KEY = process.env.NEBIUS_API_KEY || process.env.GOOGLE_GEMINI_KEY || "";
-const NEBIUS_MODEL = resolveModelName(process.env.NEBIUS_MODEL || "zai-org/GLM-5.3");
+const NEBIUS_MODEL = resolveModelName(process.env.NEBIUS_MODEL || "deepseek-ai/DeepSeek-V4.1-Flash");
 const NEBIUS_BASE_URL = process.env.NEBIUS_BASE_URL || "https://api.tokenfactory.nebius.com/v1";
 const TYPESAFE_API_KEY = (process.env.TYPESAFE_API_KEY || "").trim();
 
