@@ -15,7 +15,7 @@ const app = express();
 const PORT = process.env.PORT || 8787;
 const CL_BASE = "https://www.courtlistener.com";
 const TOKEN = process.env.COURTLISTENER_TOKEN || process.env.CL_TOKEN || "";
-const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || process.env.CASEFILE_PASSWORD || "";
+const ACCESS_PASSWORD = process.env.CASEFILE_ACCESS_PASSWORD || process.env.ACCESS_PASSWORD || process.env.CASEFILE_PASSWORD || "";
 
 // Optional LLM inference via Nebius Token Factory (OpenAI-compatible)
 function resolveModelName(name) {
