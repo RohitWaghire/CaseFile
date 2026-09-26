@@ -3679,6 +3679,21 @@ p {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.graph-zoom-group {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.graph-zoom-level {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: var(--text-mute);
+  min-width: 36px;
+  text-align: center;
 }
 
 .seg-sm .seg-btn {
@@ -3690,8 +3705,10 @@ p {
   flex: 1;
   position: relative;
   overflow: hidden;
-  min-height: 420px;
+  min-height: 440px;
   background: radial-gradient(circle at center, #10151c 0%, #080a0e 100%);
+  user-select: none;
+  touch-action: none;
 }
 
 .graph-svg {

@@ -1,6 +1,18 @@
 import { useState, useRef, useMemo } from "react";
-import { ShieldWarning, CheckCircle, ArrowsOut, Sparkle, Eye } from "@phosphor-icons/react";
-import type { FavorableCase as FavorablePrecedent, AdverseCase as AdversePrecedent, VerifiedCitation as CitationAudit } from "../lib/api";
+import {
+  ShieldWarning,
+  CheckCircle,
+  ArrowsOut,
+  Sparkle,
+  Eye,
+  MagnifyingGlassPlus,
+  MagnifyingGlassMinus,
+} from "@phosphor-icons/react";
+import type {
+  FavorableCase as FavorablePrecedent,
+  AdverseCase as AdversePrecedent,
+  VerifiedCitation as CitationAudit,
+} from "../lib/api";
 
 interface Node {
   id: string;
@@ -11,10 +23,8 @@ interface Node {
   court: string;
   x: number;
   y: number;
-  vx?: number;
-  vy?: number;
   holding: string;
-  importance: number; // 1 to 3 (radius multiplier)
+  importance: number;
 }
 
 interface Edge {
@@ -28,6 +38,20 @@ interface PrecedentGraphProps {
   adverse: AdversePrecedent[];
   citations?: CitationAudit[];
   onSelectCase?: (title: string) => void;
+}
+
+const CANVAS_WIDTH = 860;
+const CANVAS_HEIGHT = 520;
+const CX = CANVAS_WIDTH / 2; // 430
+const CY = CANVAS_HEIGHT / 2; // 260
+
+function cleanCitation(cite: string): string {
+  if (!cite) return "";
+  const cleaned = cite.replace(/^unbound\s*\(/i, "").replace(/\)$/, "").trim();
+  if (cleaned.length > 26) {
+    return `${cleaned.slice(0, 24)}…`;
+  }
+  return cleaned;
 }
 
 export function PrecedentGraph({
@@ -44,12 +68,12 @@ export function PrecedentGraph({
   const [filter, setFilter] = useState<"all" | "favorable" | "adverse">("all");
   const svgRef = useRef<SVGSVGElement | null>(null);
 
-  // Synthesize nodes & edges from current session precedents via useMemo
+  // Synthesize nodes & edges with balanced elliptical distribution
   const { nodes, edges } = useMemo(() => {
     const newNodes: Node[] = [];
     const newEdges: Edge[] = [];
 
-    // Central anchor node (e.g. governing statute or query root)
+    // Central anchor node (governing legal foundation)
     newNodes.push({
       id: "root-issue",
       title: "Main Law Foundation",
@@ -57,70 +81,145 @@ export function PrecedentGraph({
       type: "root",
       year: 2016,
       court: "Written Federal Law",
-      x: 380,
-      y: 220,
+      x: CX,
+      y: CY,
       holding: "The core federal laws and constitutional rules governing this legal issue.",
       importance: 3,
     });
 
-    // Spread favorable nodes on left/top-right
-    favorable.forEach((fav, i) => {
-      const angle = (i / Math.max(1, favorable.length)) * Math.PI - Math.PI / 2;
-      const radius = 170 + (i % 2) * 35;
-      const nodeId = `fav-${fav.id || i}`;
-      newNodes.push({
-        id: nodeId,
-        title: fav.title,
-        citation: fav.citation,
-        type: "favorable",
-        year: 2018 + (i * 2),
-        court: fav.citation.includes("9th") ? "9th Cir." : "Federal Appellate",
-        x: 380 + Math.cos(angle) * radius,
-        y: 220 + Math.sin(angle) * radius,
-        holding: fav.holding,
-        importance: 2,
-      });
+    const hasFavorable = favorable.length > 0;
+    const hasAdverse = adverse.length > 0;
 
-      newEdges.push({
-        source: nodeId,
-        target: "root-issue",
-        label: i % 2 === 0 ? "establishes" : "cites",
-      });
-    });
+    if (hasFavorable && hasAdverse) {
+      // 1. Two-Sided Adversarial Layout:
+      // Favorable nodes on LEFT arc (approx 120° to 240°)
+      const favCount = favorable.length;
+      const favSpan = favCount === 1 ? 0 : Math.min(Math.PI * 0.75, 0.45 * (favCount - 1));
+      const favStart = Math.PI - favSpan / 2;
+      const favStep = favCount > 1 ? favSpan / (favCount - 1) : 0;
 
-    // Spread adverse nodes on right/bottom
-    adverse.forEach((adv, i) => {
-      const angle = (i / Math.max(1, adverse.length)) * Math.PI + Math.PI / 2;
-      const radius = 180 + (i % 2) * 40;
-      const nodeId = `adv-${adv.id || i}`;
-      newNodes.push({
-        id: nodeId,
-        title: adv.title,
-        citation: adv.citation,
-        type: "adverse",
-        year: 2020 + i,
-        court: "Circuit Precedent",
-        x: 380 + Math.cos(angle) * radius,
-        y: 220 + Math.sin(angle) * radius,
-        holding: adv.opposingArgument,
-        importance: 2,
-      });
+      favorable.forEach((fav, i) => {
+        const angle = favCount === 1 ? Math.PI : favStart + i * favStep;
+        const radiusX = 220 + (i % 2) * 15;
+        const radiusY = 135 + (i % 2) * 10;
+        const nodeId = `fav-${fav.id || i}`;
 
-      newEdges.push({
-        source: nodeId,
-        target: "root-issue",
-        label: "limits",
-      });
+        newNodes.push({
+          id: nodeId,
+          title: fav.title,
+          citation: fav.citation,
+          type: "favorable",
+          year: 2018 + i * 2,
+          court: fav.citation.includes("9th") ? "9th Cir." : "Federal Appellate",
+          x: CX + Math.cos(angle) * radiusX,
+          y: CY + Math.sin(angle) * radiusY,
+          holding: fav.holding,
+          importance: 2,
+        });
 
-      // Connect to first favorable node as distinguishing authority
-      if (newNodes.length > 1) {
         newEdges.push({
           source: nodeId,
-          target: newNodes[1].id,
+          target: "root-issue",
+          label: i % 2 === 0 ? "establishes" : "cites",
+        });
+      });
+
+      // Adverse nodes on RIGHT arc (approx -60° to +60°)
+      const advCount = adverse.length;
+      const advSpan = advCount === 1 ? 0 : Math.min(Math.PI * 0.75, 0.45 * (advCount - 1));
+      const advStart = -advSpan / 2;
+      const advStep = advCount > 1 ? advSpan / (advCount - 1) : 0;
+
+      adverse.forEach((adv, i) => {
+        const angle = advCount === 1 ? 0 : advStart + i * advStep;
+        const radiusX = 220 + (i % 2) * 15;
+        const radiusY = 135 + (i % 2) * 10;
+        const nodeId = `adv-${adv.id || i}`;
+
+        newNodes.push({
+          id: nodeId,
+          title: adv.title,
+          citation: adv.citation,
+          type: "adverse",
+          year: 2020 + i,
+          court: "Circuit Precedent",
+          x: CX + Math.cos(angle) * radiusX,
+          y: CY + Math.sin(angle) * radiusY,
+          holding: adv.opposingArgument,
+          importance: 2,
+        });
+
+        newEdges.push({
+          source: nodeId,
+          target: "root-issue",
+          label: "limits",
+        });
+
+        // Distinguish against corresponding favorable precedent
+        const targetFav = `fav-${favorable[i % favorable.length].id || (i % favorable.length)}`;
+        newEdges.push({
+          source: nodeId,
+          target: targetFav,
           label: "distinguishes",
         });
-      }
-    });
+      });
+    } else if (hasAdverse) {
+      // 2. Only Adverse nodes present: distribute in a balanced elliptical orbit
+      const count = adverse.length;
+      adverse.forEach((adv, i) => {
+        const angle = (i / count) * 2 * Math.PI - Math.PI / 2;
+        const radiusX = 230 + (i % 2) * 20;
+        const radiusY = 140 + (i % 2) * 10;
+        const nodeId = `adv-${adv.id || i}`;
+
+        newNodes.push({
+          id: nodeId,
+          title: adv.title,
+          citation: adv.citation,
+          type: "adverse",
+          year: 2020 + i,
+          court: "Circuit Precedent",
+          x: CX + Math.cos(angle) * radiusX,
+          y: CY + Math.sin(angle) * radiusY,
+          holding: adv.opposingArgument,
+          importance: 2,
+        });
+
+        newEdges.push({
+          source: nodeId,
+          target: "root-issue",
+          label: "limits",
+        });
+      });
+    } else if (hasFavorable) {
+      // 3. Only Favorable nodes present: distribute in a balanced elliptical orbit
+      const count = favorable.length;
+      favorable.forEach((fav, i) => {
+        const angle = (i / count) * 2 * Math.PI - Math.PI / 2;
+        const radiusX = 230 + (i % 2) * 20;
+        const radiusY = 140 + (i % 2) * 10;
+        const nodeId = `fav-${fav.id || i}`;
+
+        newNodes.push({
+          id: nodeId,
+          title: fav.title,
+          citation: fav.citation,
+          type: "favorable",
+          year: 2018 + i * 2,
+          court: fav.citation.includes("9th") ? "9th Cir." : "Federal Appellate",
+          x: CX + Math.cos(angle) * radiusX,
+          y: CY + Math.sin(angle) * radiusY,
+          holding: fav.holding,
+          importance: 2,
+        });
+
+        newEdges.push({
+          source: nodeId,
+          target: "root-issue",
+          label: i % 2 === 0 ? "establishes" : "cites",
+        });
+      });
+    }
 
     return { nodes: newNodes, edges: newEdges };
   }, [favorable, adverse]);
@@ -136,22 +235,42 @@ export function PrecedentGraph({
   }, [selectedNode, citations]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.target === svgRef.current || (e.target as HTMLElement).tagName === "svg") {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest(".graph-node-group") || target.closest(".graph-node-card")) {
+      return;
     }
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isDragging) {
-      setPan({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
-      });
-    }
+    if (!isDragging) return;
+    setPan({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y,
+    });
   };
 
   const handleMouseUp = () => setIsDragging(false);
+  const handleMouseLeave = () => setIsDragging(false);
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const zoomDelta = e.deltaY < 0 ? 1.12 : 0.88;
+    setZoom((prev) => {
+      const next = prev * zoomDelta;
+      return Math.min(2.5, Math.max(0.4, Number(next.toFixed(2))));
+    });
+  };
+
+  const handleZoomIn = () => {
+    setZoom((prev) => Math.min(2.5, Number((prev * 1.2).toFixed(2))));
+  };
+
+  const handleZoomOut = () => {
+    setZoom((prev) => Math.max(0.4, Number((prev / 1.2).toFixed(2))));
+  };
 
   const resetView = () => {
     setZoom(1);
@@ -203,14 +322,35 @@ export function PrecedentGraph({
             </button>
           </div>
 
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={resetView}
-            title="Reset Pan & Zoom"
-          >
-            <ArrowsOut size={13} /> Reset View
-          </button>
+          <div className="graph-zoom-group">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleZoomIn}
+              title="Zoom In"
+              aria-label="Zoom in"
+            >
+              <MagnifyingGlassPlus size={13} />
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleZoomOut}
+              title="Zoom Out"
+              aria-label="Zoom out"
+            >
+              <MagnifyingGlassMinus size={13} />
+            </button>
+            <span className="graph-zoom-level">{Math.round(zoom * 100)}%</span>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={resetView}
+              title="Reset Pan & Zoom"
+            >
+              <ArrowsOut size={13} /> Reset View
+            </button>
+          </div>
         </div>
       </div>
 
@@ -220,11 +360,14 @@ export function PrecedentGraph({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        onWheel={handleWheel}
       >
         <svg
           ref={svgRef}
           className="graph-svg"
-          viewBox="0 0 760 440"
+          viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
+          preserveAspectRatio="xMidYMid meet"
           style={{
             cursor: isDragging ? "grabbing" : "grab",
           }}
@@ -267,7 +410,10 @@ export function PrecedentGraph({
           {/* Background Grid */}
           <rect width="100%" height="100%" fill="url(#graph-grid)" />
 
-          <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
+          <g
+            transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}
+            style={{ transformOrigin: `${CX}px ${CY}px` }}
+          >
             {/* Edges */}
             {edges.map((edge, idx) => {
               const sourceNode = filteredNodes.find((n) => n.id === edge.source);
@@ -275,8 +421,12 @@ export function PrecedentGraph({
               if (!sourceNode || !targetNode) return null;
 
               const isAdverseEdge = edge.label === "distinguishes" || edge.label === "limits";
-              const strokeColor = isAdverseEdge ? "rgba(196, 163, 90, 0.45)" : "rgba(106, 171, 138, 0.45)";
-              const markerEnd = isAdverseEdge ? "url(#arrow-distinguishes)" : "url(#arrow-cites)";
+              const strokeColor = isAdverseEdge
+                ? "rgba(196, 163, 90, 0.45)"
+                : "rgba(106, 171, 138, 0.45)";
+              const markerEnd = isAdverseEdge
+                ? "url(#arrow-distinguishes)"
+                : "url(#arrow-cites)";
 
               return (
                 <g key={`edge-${idx}`}>
@@ -340,12 +490,15 @@ export function PrecedentGraph({
                 radius += 3;
               }
 
+              const displayCitation = cleanCitation(node.citation);
+
               return (
                 <g
                   key={node.id}
                   transform={`translate(${node.x}, ${node.y})`}
                   className="graph-node-group"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setSelectedNode(node);
                     if (onSelectCase && !isRoot) onSelectCase(node.title);
                   }}
@@ -368,7 +521,15 @@ export function PrecedentGraph({
                   <text
                     textAnchor="middle"
                     dominantBaseline="central"
-                    fill={isRoot ? "var(--accent)" : isFavorable ? "#72ba97" : isAdverse ? "#dbc07a" : "#fff"}
+                    fill={
+                      isRoot
+                        ? "var(--accent)"
+                        : isFavorable
+                        ? "#72ba97"
+                        : isAdverse
+                        ? "#dbc07a"
+                        : "#fff"
+                    }
                     fontSize={isRoot ? 13 : 11}
                     fontWeight="700"
                     fontFamily="var(--font-mono)"
@@ -386,15 +547,17 @@ export function PrecedentGraph({
                   >
                     {node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title}
                   </text>
-                  <text
-                    y={radius + 25}
-                    textAnchor="middle"
-                    fill="var(--text-mute)"
-                    fontSize="8.5"
-                    fontFamily="var(--font-mono)"
-                  >
-                    {node.citation}
-                  </text>
+                  {displayCitation && (
+                    <text
+                      y={radius + 25}
+                      textAnchor="middle"
+                      fill="var(--text-mute)"
+                      fontSize="8.5"
+                      fontFamily="var(--font-mono)"
+                    >
+                      {displayCitation}
+                    </text>
+                  )}
                 </g>
               );
             })}
@@ -405,9 +568,7 @@ export function PrecedentGraph({
         {selectedNode && (
           <div className="graph-node-card">
             <div className="node-card-head">
-              <span
-                className={`node-card-badge ${selectedNode.type}`}
-              >
+              <span className={`node-card-badge ${selectedNode.type}`}>
                 {selectedNode.type === "root"
                   ? "Law Foundation"
                   : selectedNode.type === "favorable"
@@ -415,7 +576,10 @@ export function PrecedentGraph({
                   : "Opposing Case (Other Side)"}
               </span>
               {isVerifiedAuthority && (
-                <span className="node-card-badge favorable" title="Verified against official court dockets">
+                <span
+                  className="node-card-badge favorable"
+                  title="Verified against official court dockets"
+                >
                   <CheckCircle size={12} weight="fill" /> Verified
                 </span>
               )}
